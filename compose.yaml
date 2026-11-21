@@ -1,0 +1,94 @@
+# MealPlanner Milly runs entirely in Docker on one machine at home (MM-1).
+#
+#   app        PHP 8.4 + Apache, serves the web UI on http://localhost:8000
+#   db         MySQL 8.4, data in the named volume `db_data`
+#   scheduler  the same image running Laravel's scheduler in the household time zone
+#
+# `app` reaches `db` at the hostname `db` over the Docker network. MySQL's port is
+# deliberately NOT published: nothing outside the compose network needs it.
+#
+# The defaults below match `.env.example`, so `docker compose up` works on a fresh
+# clone even before you copy the file. Once `.env` exists, compose reads your values
+# from it. If you change DB_* in `.env`, do it before the first boot (or run
+# `docker compose down -v`), because MySQL only applies them when the volume is new.
+
+name: mealplanner-milly
+
+x-php-service: &php-service
+  build:
+    context: .
+    args:
+      APP_UID: ${APP_UID:-1000}
+      APP_GID: ${APP_GID:-1000}
+  image: mealplanner-milly/app:local
+  restart: unless-stopped
+  volumes:
+    # The project is bind-mounted, so edits on the host show up immediately.
+    - .:/var/www/html
+    # ...except node_modules: Vite's native binaries differ between the host OS
+    # and the container, so each keeps its own copy.
+    - node_modules:/var/www/html/node_modules
+
+services:
+  app:
+    <<: *php-service
+    environment:
+      CONTAINER_ROLE: app
+      TZ: ${APP_TIMEZONE:-America/Toronto}
+      APP_PORT: ${APP_PORT:-8000}
+    ports:
+      # Bind to 0.0.0.0 so phones and the kitchen tablet on the home LAN can reach it.
+      # Do not port-forward this: there is no login yet (see docs/decisions.md).
+      # This is the only published port: MySQL stays on the Docker network, and the
+      # asset build runs in the container rather than over a Vite dev server.
+      - "${APP_PORT:-8000}:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Laravel's built-in health route.
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/up') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Generous: the first boot installs Composer and npm dependencies.
+      start_period: 300s
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      TZ: ${APP_TIMEZONE:-America/Toronto}
+      MYSQL_DATABASE: ${DB_DATABASE:-milly}
+      MYSQL_USER: ${DB_USERNAME:-milly}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-milly-dev-password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-milly-dev-root-password}
+    volumes:
+      - db_data:/var/lib/mysql
+      # Runs only when db_data is empty; creates the `*_test` database.
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  scheduler:
+    <<: *php-service
+    environment:
+      CONTAINER_ROLE: scheduler
+      # Laravel reads this for date handling; the container clock follows it too,
+      # so "7:00 pm the evening before shopping" means 7:00 pm in the kitchen.
+      TZ: ${APP_TIMEZONE:-America/Toronto}
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      db:
+        condition: service_healthy
+      # Waits until `app` has installed dependencies and migrated.
+      app:
+        condition: service_healthy
+
+volumes:
+  db_data:
+  node_modules:

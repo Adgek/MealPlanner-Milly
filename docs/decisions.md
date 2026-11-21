@@ -41,6 +41,27 @@ These are not household answers; they are the small choices Laravel and Docker i
 
 **Already on the dev machine** (checked in MM-1): Docker 29.5.3, Docker Compose v5.1.4, PHP 8.4.8, Composer 2.8.9, plus Node and pnpm for Laravel's asset build. MM-2 should not need new tooling.
 
+### What MM-2 actually built
+
+The skeleton is in place. The derived defaults above all held, with the specifics below. See the [README](../README.md) for the commands and `AGENTS.md` for the conventions.
+
+| Choice | What MM-2 picked | Why |
+|---|---|---|
+| Versions | Laravel 13 on PHP 8.4, Livewire 4, Pest 4, Pint 1 | Current stable; PHP 8.4.8 is what the machine has. |
+| `app` container | `php:8.4-apache` (Apache + mod_php), with Node 22 added | One process serves the pages, so "PHP + web" is a single service. Node is in the image so the asset build also runs in the container and the host needs only Docker. |
+| `scheduler` container | The same image, running `php artisan schedule:work` | Nothing to keep in sync between two images. It waits for `app` to be healthy, so installs and migrations happen exactly once. |
+| Published ports | **Only** the web port (`APP_PORT`, default 8000) | MySQL stays on the Docker network, as decided. Nothing else needs publishing, so the stack can't collide with another project's ports. |
+| Asset tooling | **npm**, not pnpm | npm ships with Node, so the image needs nothing extra and there is one lockfile (`package-lock.json`) that the container and the host agree on. |
+| Hot reloading | None. `npm run watch` (`vite build --watch`) instead | No Vite dev server means no second published port and no HMR setup; save a file, refresh the page. |
+| `node_modules` | A named volume, not the bind mount | Vite's native binaries differ between macOS and the Linux container; each keeps its own copy. Everything else is bind-mounted, so edits apply immediately. |
+| First boot | The container entrypoint creates `.env`, installs, generates `APP_KEY`, builds assets and migrates | Makes `docker compose up` on a fresh clone genuinely one command. It is idempotent, so restarts are cheap. |
+| Test database | Real **MySQL 8.4**, in a companion `<DB_DATABASE>_test` database (the `mysql_testing` connection) | Not SQLite: migrations and planning queries get tested against the engine that actually runs them. `tests/TestCase.php` refuses any database whose name doesn't end in `_test`, so a test run can't touch household data. |
+| Livewire components | Class-based (`app/Livewire/*.php` + `resources/views/livewire/*.blade.php`) | Livewire 4 defaults to single-file components with a `⚡` in the filename. A plain class is easier to unit-test and keeps filenames ASCII. Set in `config/livewire.php`. |
+| Tables created | Laravel's own only: `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs` | The session, cache and queue drivers are all database-backed, so these have to exist. **No `users` table and no auth scaffolding** — MM-1 chose no login. No household tables: MM-3 adds those. |
+| Slack settings | `SLACK_BOT_USER_OAUTH_TOKEN` and `SLACK_BOT_USER_DEFAULT_CHANNEL` in `.env`, read by `config/services.php` | Laravel's own Slack notification channel already expects these names, so MM-9 can use it without rewiring. Placeholders only in `.env.example`. |
+| Time zone | `APP_TIMEZONE` in `.env` sets Laravel's zone and both containers' clocks | One knob. `config/app.php` shipped with `'UTC'` hard-coded; MM-2 made it read the env var. |
+| Scripts | A `Makefile` of thin wrappers, plus the same checks as `composer test` / `lint` / `format` / `build` inside the container | The README lists the plain `docker compose` command beside each target, so nothing depends on `make`. |
+
 ### Open, not blocking
 
 - **Reaching the app away from home.** Not decided. Today the answer is "you can't". If the household wants the plan page or Slack links to work on mobile data, the options are something like Tailscale (and then a login, because the app would be reachable from more places) or leaving it home-only. MM-10 can raise this again.

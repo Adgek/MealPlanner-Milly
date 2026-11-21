@@ -22,8 +22,12 @@
             wire:poll.5s
             class="flex items-baseline justify-between rounded-lg border border-stone-200 bg-white px-6 py-4"
         >
+            {{--
+                The household's own time zone, not config('app.timezone'): the app
+                stores instants in UTC and renders them in kitchen time.
+            --}}
             <span class="text-sm font-medium text-stone-500">
-                Kitchen clock ({{ config('app.timezone') }})
+                Kitchen clock ({{ $this->householdTimeZone() }})
             </span>
             <span class="font-mono text-sm text-stone-900" data-testid="household-time">
                 {{ $this->householdTime() }}

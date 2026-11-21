@@ -34,7 +34,9 @@ services:
     <<: *php-service
     environment:
       CONTAINER_ROLE: app
-      TZ: ${APP_TIMEZONE:-America/Toronto}
+      # The container clock, so logs read in kitchen time. The app itself computes
+      # and stores in UTC regardless (config/app.php).
+      TZ: ${HOUSEHOLD_TIMEZONE:-America/Toronto}
       APP_PORT: ${APP_PORT:-8000}
     ports:
       # Bind to 0.0.0.0 so phones and the kitchen tablet on the home LAN can reach it.
@@ -58,7 +60,7 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      TZ: ${APP_TIMEZONE:-America/Toronto}
+      TZ: ${HOUSEHOLD_TIMEZONE:-America/Toronto}
       MYSQL_DATABASE: ${DB_DATABASE:-milly}
       MYSQL_USER: ${DB_USERNAME:-milly}
       MYSQL_PASSWORD: ${DB_PASSWORD:-milly-dev-password}
@@ -78,9 +80,10 @@ services:
     <<: *php-service
     environment:
       CONTAINER_ROLE: scheduler
-      # Laravel reads this for date handling; the container clock follows it too,
-      # so "7:00 pm the evening before shopping" means 7:00 pm in the kitchen.
-      TZ: ${APP_TIMEZONE:-America/Toronto}
+      # The container clock. What actually makes "7:00 pm the evening before
+      # shopping" mean 7:00 pm in the kitchen is app.schedule_timezone, which the
+      # app takes from the household's 'time_zone' setting (falling back to this).
+      TZ: ${HOUSEHOLD_TIMEZONE:-America/Toronto}
     command: ["php", "artisan", "schedule:work"]
     depends_on:
       db:

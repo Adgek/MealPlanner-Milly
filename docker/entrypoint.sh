@@ -118,6 +118,10 @@ app)
     wait_for_db
     log "running migrations"
     php artisan migrate --force
+    # The starting settings and cook schedule (docs/decisions.md). Only ever adds,
+    # so a value the household has changed on the Settings page survives a restart.
+    log "installing household defaults"
+    php artisan db:seed --class=Database\\Seeders\\HouseholdDefaultsSeeder --force
     log "clearing stale caches"
     php artisan config:clear
     php artisan view:clear

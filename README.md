@@ -106,18 +106,62 @@ named volume, because Vite's native binaries differ between macOS and the contai
 
 ### The scheduler and time
 
-`APP_TIMEZONE` in `.env` (default `America/Toronto`) sets Laravel's time zone *and*
-both containers' clocks, so "7:00 pm the evening before shopping" means 7:00 pm in
-the kitchen. Scheduled work is declared in `routes/console.php`; MM-9 and MM-13 add
-the real jobs.
+The app keeps two clocks apart:
+
+- **It computes and stores in UTC.** `config('app.timezone')` is fixed at `UTC` and
+  is deliberately not read from the environment, so every timestamp in MySQL is an
+  absolute instant. A `.env` that disagreed with the data would quietly
+  reinterpret every row already stored.
+- **The household's own time zone is a setting.** The `time_zone` row in `settings`
+  (default `America/Toronto`) is what pages render times in, and what the scheduler
+  fires on, so "7:00 pm the evening before shopping" means 7:00 pm in the kitchen.
+  It is editable on the Settings page (MM-4).
+
+Laravel reads `app.schedule_timezone` when it builds the schedule. `config/app.php`
+seeds that from `HOUSEHOLD_TIMEZONE` in `.env` — the fallback for before the
+database can be read — and `AppServiceProvider` then replaces it with the
+`time_zone` setting, so changing the time zone in Settings moves the reminders with
+it. `HOUSEHOLD_TIMEZONE` also sets the containers' clocks, so logs read locally.
+
+Dates that are *calendar* dates — a plan's nights, a shopping date, meal history —
+are `date` columns, not timestamps, so they cannot slide a day when a zone is
+applied. `HouseholdSettings::at('18:00', $date)` turns a stored time plus a date
+into a real moment in the household's zone.
+
+Scheduled work is declared in `routes/console.php`; MM-9 and MM-13 add the real jobs.
 
 ### The database
 
-`php artisan migrate` runs on every boot of `app`. Right now the only tables are
-Laravel's own: `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`,
-`failed_jobs` and `migrations` — needed because the session, cache and queue
-drivers are all database-backed. There is no `users` table: there is no login.
-The household's own tables arrive in MM-3.
+`php artisan migrate` runs on every boot of `app`, followed by
+`HouseholdDefaultsSeeder`, which installs the starting settings and the weekly cook
+schedule from `docs/decisions.md`. That seeder only ever *adds*, so a value the
+household has since changed on the Settings page survives a restart.
+
+Alongside Laravel's own tables (`sessions`, `cache`, `cache_locks`, `jobs`,
+`job_batches`, `failed_jobs`, `migrations` — the session, cache and queue drivers
+are database-backed) the household's tables are:
+
+| Table | What it holds |
+|---|---|
+| `settings` | One row per household setting, value as JSON |
+| `cook_schedule_nights` | The normal week: seven rows of who cooks and how long |
+| `recipes` | The recipe vault |
+| `bulk_ingredients`, `bulk_ingredient_recipe` | Packs worth splitting, and which recipes share them |
+| `recipe_prep_steps` | Upstream prep, with how many hours ahead it happens |
+| `ingredients` | What a recipe **or** a kitchen project needs (polymorphic) |
+| `kitchen_projects` | Recurring projects, their cadence and what they produce |
+| `freezer_items` | The freezer stash and its portion counts |
+| `kid_backup_foods` | The guaranteed-safe backups to keep stocked |
+| `plans`, `plan_nights` | One plan per shopping window, and its nights |
+| `plan_grocery_items` | The grocery checklist, including what's been ticked |
+| `meal_history` | What we actually cooked, and when |
+
+There is no `users` table: there is no login.
+
+`make fresh` rebuilds all of it from scratch. `docker compose exec app php artisan
+db:seed` additionally loads `ExampleDataSeeder` — the Bulgogi/tacos/chili sample
+set from `AppPlan.md`, useful in development. The household's own recipes are
+loaded by MM-5, not by a seeder.
 
 Tests run against a **separate database** on the same server, `<DB_DATABASE>_test`
 (so `milly_test` by default), created the first time the `db` volume initialises.

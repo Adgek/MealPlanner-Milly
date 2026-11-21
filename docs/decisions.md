@@ -62,6 +62,69 @@ The skeleton is in place. The derived defaults above all held, with the specific
 | Time zone | `APP_TIMEZONE` in `.env` sets Laravel's zone and both containers' clocks | One knob. `config/app.php` shipped with `'UTC'` hard-coded; MM-2 made it read the env var. |
 | Scripts | A `Makefile` of thin wrappers, plus the same checks as `composer test` / `lint` / `format` / `build` inside the container | The README lists the plain `docker compose` command beside each target, so nothing depends on `make`. |
 
+### Data model (decided in MM-3)
+
+The tables, the models and the starting settings exist. Other tickets read and write
+through Eloquent models in `app/Models`, and every entity has a factory.
+
+- **Times are stored in UTC; the household time zone is applied on the way out.**
+  `config('app.timezone')` is fixed at `UTC` and is deliberately *not* read from the
+  environment, so every timestamp in MySQL is an absolute instant.
+
+  This **changes what MM-2 recorded.** MM-2 set `APP_TIMEZONE=America/Toronto`, which
+  made Eloquent write local wall-clock times into timestamp columns — two rows an
+  hour apart can compare equal across a DST change, and the stored value means
+  nothing without knowing the zone that wrote it. The household's time zone is now
+  the `time_zone` **setting** instead, which is also where AGENTS.md says household
+  values belong.
+
+  What this means for later tickets:
+  - **Displaying a time** applies `HouseholdSettings::timeZone()`. A page that prints
+    a raw timestamp shows UTC and will be wrong by the offset.
+  - **The scheduler** already fires on the household clock: Laravel reads
+    `app.schedule_timezone`, `config/app.php` seeds it from `HOUSEHOLD_TIMEZONE` in
+    `.env`, and `AppServiceProvider` replaces that with the `time_zone` setting. So
+    `->dailyAt('15:00')` in MM-13 means 3:00 pm in the kitchen, with no extra work.
+  - **A night is a calendar date, not an instant.** Plan nights, shopping dates and
+    meal history are `date` columns, so they cannot slide a day when a zone is
+    applied. `HouseholdSettings::at('18:00', $date)` turns a stored time plus a date
+    into a real moment.
+
+- **Settings are one row per value, with the value as JSON.** A setting can be a
+  string, a number or a structure (the two shopping windows) without a migration per
+  shape. Read through `App\Settings\HouseholdSettings`, which holds each setting's
+  default in one place and returns typed values. Note that MySQL normalises JSON
+  object key order, so don't depend on it.
+
+- **The weekly cook schedule is seven rows,** in `cook_schedule_nights`, not a
+  setting — each night is read and edited on its own. A plan night *copies* its cook
+  and time from the schedule rather than joining to it, so editing the normal week
+  never rewrites a plan that is already out. The one-off override for a single date
+  lives on the plan night.
+
+- **Enum columns are strings cast to PHP enums** (`app/Enums`), not MySQL `ENUM`s, so
+  adding a case doesn't need a migration. `EffortTier` deliberately serves both sides
+  of the picker's match: on a recipe it is the effort demanded, on a night it is the
+  time available.
+
+- **Ingredients are one polymorphic table** shared by recipes and kitchen projects,
+  because the grocery list combines both and merging them is then one query. The
+  trade-off: polymorphic relations carry no foreign key, so the two parent models
+  delete their ingredients in a model event rather than relying on MySQL to cascade.
+
+- **Store sections are free text,** not an enum: they depend on the household's store,
+  which makes them data rather than code.
+
+- **The grocery checklist is stored, not recomputed.** Both phones have to see the
+  same ticks, and a re-roll must not rewrite the list someone is standing in the shop
+  with.
+
+- **The starting settings are seeded on every boot, and only ever added.**
+  `HouseholdDefaultsSeeder` runs from the container entrypoint after `migrate` and
+  uses `firstOrCreate`, so a value the household has changed survives a restart.
+  `ExampleDataSeeder` holds the sample recipes from `AppPlan.md`; it is for
+  development, and is not the household's data (MM-5 loads that).
+
 ### Open, not blocking
 
 - **Reaching the app away from home.** Not decided. Today the answer is "you can't". If the household wants the plan page or Slack links to work on mobile data, the options are something like Tailscale (and then a login, because the app would be reachable from more places) or leaving it home-only. MM-10 can raise this again.

@@ -59,13 +59,40 @@ return [
     | Application Timezone
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | The clock the app computes in, and therefore the clock Eloquent writes
+    | timestamps on. This is UTC on purpose: stored instants are absolute, and
+    | the household time zone is applied when a page displays one. Changing it
+    | would silently reinterpret every timestamp already in the database.
+    |
+    | The household's own time zone is a setting, not this value: see the
+    | 'time_zone' row in the settings table and App\Settings\HouseholdSettings.
+    |
+    | Deliberately not read from the environment. It is an invariant of the
+    | stored data rather than a thing to configure per deployment, and a .env
+    | that disagreed with the timestamps already in the database would be a very
+    | quiet kind of wrong. Set HOUSEHOLD_TIMEZONE instead.
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'UTC'),
+    'timezone' => 'UTC',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Schedule Timezone
+    |--------------------------------------------------------------------------
+    |
+    | The clock scheduled tasks are evaluated against, so "3:00 pm" in a
+    | reminder means 3:00 pm in the kitchen rather than 3:00 pm UTC. Laravel
+    | reads this when it builds the schedule; it does not affect storage.
+    |
+    | This is the fallback for before the database can be read. Once the
+    | settings table exists, AppServiceProvider replaces it with the household's
+    | 'time_zone' setting, so changing the time zone on the Settings page (MM-4)
+    | moves the reminders with it.
+    |
+    */
+
+    'schedule_timezone' => env('HOUSEHOLD_TIMEZONE', 'America/Toronto'),
 
     /*
     |--------------------------------------------------------------------------

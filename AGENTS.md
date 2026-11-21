@@ -47,7 +47,12 @@ not a substitute for the unit tests underneath.
 - **MySQL 8.4 is the database.** Tests run against it too, in a separate
   `<DB_DATABASE>_test` database — not SQLite — so migrations and queries are
   exercised against the real engine.
-- **Eloquent, with factories and seeders.** Not hand-written query functions.
+- **Eloquent, with factories and seeders.** Not hand-written query functions. Every
+  entity has a factory; `HouseholdDefaultsSeeder` installs the starting settings
+  and the weekly cook schedule, and `ExampleDataSeeder` the sample recipes.
+- **Enum columns are strings cast to PHP enums** (`app/Enums`), not MySQL `ENUM`s,
+  so adding a case doesn't need a migration. The stored values are part of the
+  data: renaming one invalidates existing rows.
 - **Blade for pages, Livewire where a page updates itself.** Livewire components are
   class-based: `app/Livewire/Thing.php` plus `resources/views/livewire/thing.blade.php`.
   Add new pages to `resources/views/components/navigation.blade.php`.
@@ -55,6 +60,13 @@ not a substitute for the unit tests underneath.
   the check. Don't hand-tune style.
 - **Secrets live in `.env`.** `.env.example` carries placeholders only, and gains a
   line whenever a new setting appears.
-- **Times are household-local.** The containers run in `APP_TIMEZONE`, so a reminder
-  at 3:00 pm means 3:00 pm in the kitchen. Be explicit about time zones in any date
-  maths that crosses a day boundary.
+- **Store in UTC, display in the household's zone.** `config('app.timezone')` is
+  `UTC` and is not configurable, so every timestamp in MySQL is an absolute
+  instant. Apply `HouseholdSettings::timeZone()` when a page shows a time; the
+  scheduler already runs on it via `app.schedule_timezone`. Be explicit about time
+  zones in any date maths that crosses a day boundary — 7:00 pm in Toronto is
+  already tomorrow in UTC.
+- **A night is a calendar date, not an instant.** Plan nights, shopping dates and
+  meal history use `date` columns and the `immutable_date` cast, so they can't
+  slide a day when a zone is applied. Use `HouseholdSettings::at()` to turn a
+  stored `"HH:MM"` setting plus a date into a real moment.

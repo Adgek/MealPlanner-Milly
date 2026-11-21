@@ -13,7 +13,7 @@ COMPOSE := docker compose
 EXEC    := $(COMPOSE) exec app
 
 .DEFAULT_GOAL := help
-.PHONY: help dev up down logs install test lint format build watch migrate fresh shell db check
+.PHONY: help dev up down logs install test lint format build watch migrate fresh seed shell db check
 
 help: ## List the available targets
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -61,8 +61,11 @@ watch: ## Rebuild the assets whenever a file changes (then refresh the browser)
 migrate: ## Run pending migrations
 	$(EXEC) php artisan migrate
 
-fresh: ## Drop every table and migrate from scratch
-	$(EXEC) php artisan migrate:fresh
+fresh: ## Drop every table, migrate, then seed defaults + example data (destructive)
+	$(EXEC) php artisan migrate:fresh --seed
+
+seed: ## Install the starting settings and cook schedule (safe: only ever adds)
+	$(EXEC) php artisan db:seed --class=Database\\Seeders\\HouseholdDefaultsSeeder
 
 shell: ## Open a shell in the app container
 	$(EXEC) bash

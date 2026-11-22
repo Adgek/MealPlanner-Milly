@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\EffortTier;
 use App\Enums\Weekday;
 use App\Models\Setting;
 use App\Settings\HouseholdSettings;
@@ -58,7 +59,8 @@ it('reads every setting in one query for the settings page', function () {
 });
 
 it('offers a typed default for every starting setting', function () {
-    // The eight rows under "Starting settings" in docs/decisions.md.
+    // The rows under "Starting settings" in docs/decisions.md. The last three are
+    // the picker's own household values, added by MM-6.
     expect(array_keys(HouseholdSettings::defaults()))->toBe([
         'time_zone',
         'shopping_times',
@@ -68,6 +70,9 @@ it('offers a typed default for every starting setting', function () {
         'daily_dinner_reminder_time',
         'raw_split_fridge_life_days',
         'low_freezer_stash_portions',
+        'variety_lookback_days',
+        'partner_solo_effort_cap',
+        'freezer_meals_on_chaos_nights_only',
     ]);
 });
 
@@ -79,7 +84,10 @@ it('reads the starting settings without any rows in the table', function () {
         ->and(HouseholdSettings::planPostTime())->toBe('19:00')
         ->and(HouseholdSettings::dailyDinnerReminderTime())->toBe('15:00')
         ->and(HouseholdSettings::rawSplitFridgeLifeDays())->toBe(2)
-        ->and(HouseholdSettings::lowFreezerStashPortions())->toBe(2);
+        ->and(HouseholdSettings::lowFreezerStashPortions())->toBe(2)
+        ->and(HouseholdSettings::varietyLookbackDays())->toBe(21)
+        ->and(HouseholdSettings::partnerSoloEffortCap())->toBe(EffortTier::Chaos15)
+        ->and(HouseholdSettings::freezerMealsOnChaosNightsOnly())->toBeTrue();
 });
 
 it('reads the two shopping windows as weekdays and times', function () {

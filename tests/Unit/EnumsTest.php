@@ -50,8 +50,17 @@ it('labels an effort tier the way the plan reads', function () {
 });
 
 it('names what can be chosen for a night', function () {
+    // nothing_fits is a decision too: the picker looked and the rules ruled every
+    // recipe out (MM-6). Kept apart from a null selection, which means "not yet".
     expect(array_map(fn ($case) => $case->value, NightSelection::cases()))
-        ->toBe(['recipe', 'freezer_item', 'night_off']);
+        ->toBe(['recipe', 'freezer_item', 'night_off', 'nothing_fits']);
+});
+
+it('knows which selections are actually dinner', function () {
+    expect(NightSelection::Recipe->hasMeal())->toBeTrue()
+        ->and(NightSelection::FreezerItem->hasMeal())->toBeTrue()
+        ->and(NightSelection::NightOff->hasMeal())->toBeFalse()
+        ->and(NightSelection::NothingFits->hasMeal())->toBeFalse();
 });
 
 it('lists the week Monday first', function () {

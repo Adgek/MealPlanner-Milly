@@ -2,6 +2,7 @@
 
 namespace App\Settings;
 
+use App\Enums\EffortTier;
 use App\Enums\Weekday;
 use App\Models\Setting;
 use DateTimeInterface;
@@ -37,6 +38,12 @@ class HouseholdSettings
     public const KEY_RAW_SPLIT_FRIDGE_LIFE_DAYS = 'raw_split_fridge_life_days';
 
     public const KEY_LOW_FREEZER_STASH_PORTIONS = 'low_freezer_stash_portions';
+
+    public const KEY_VARIETY_LOOKBACK_DAYS = 'variety_lookback_days';
+
+    public const KEY_PARTNER_SOLO_EFFORT_CAP = 'partner_solo_effort_cap';
+
+    public const KEY_FREEZER_MEALS_ON_CHAOS_NIGHTS_ONLY = 'freezer_meals_on_chaos_nights_only';
 
     /**
      * The starting settings from docs/decisions.md, with their defaults.
@@ -79,6 +86,23 @@ class HouseholdSettings
             self::KEY_RAW_SPLIT_FRIDGE_LIFE_DAYS => 2,
 
             self::KEY_LOW_FREEZER_STASH_PORTIONS => 2,
+
+            // How far back the picker looks when it favours meals we haven't had
+            // recently (MM-6). Three weeks: long enough that a window's worth of
+            // dinners isn't "recent", short enough that the whole vault doesn't
+            // count as stale at once.
+            self::KEY_VARIETY_LOOKBACK_DAYS => 21,
+
+            // The most cooking my partner wants to take on when she cooks alone:
+            // "only her 15-min recipes ... or a freezer meal" (docs/decisions.md).
+            // Her solo nights are capped at this however much time the weekly
+            // schedule says there is.
+            self::KEY_PARTNER_SOLO_EFFORT_CAP => EffortTier::Chaos15->value,
+
+            // Keep the 80%-prepped stash for the nights that need it: a freezer
+            // portion is only spent on a 15-minute night. Turn this off to let a
+            // freezer meal come up on any night.
+            self::KEY_FREEZER_MEALS_ON_CHAOS_NIGHTS_ONLY => true,
         ];
     }
 
@@ -170,6 +194,30 @@ class HouseholdSettings
     public static function lowFreezerStashPortions(): int
     {
         return (int) self::get(self::KEY_LOW_FREEZER_STASH_PORTIONS);
+    }
+
+    /**
+     * How many days back "cooked recently" reaches, for the picker's variety rule.
+     */
+    public static function varietyLookbackDays(): int
+    {
+        return (int) self::get(self::KEY_VARIETY_LOOKBACK_DAYS);
+    }
+
+    /**
+     * The most effort a recipe may demand on a night my partner cooks alone.
+     */
+    public static function partnerSoloEffortCap(): EffortTier
+    {
+        return EffortTier::from((string) self::get(self::KEY_PARTNER_SOLO_EFFORT_CAP));
+    }
+
+    /**
+     * Is a freezer portion only spent on a 15-minute night?
+     */
+    public static function freezerMealsOnChaosNightsOnly(): bool
+    {
+        return (bool) self::get(self::KEY_FREEZER_MEALS_ON_CHAOS_NIGHTS_ONLY);
     }
 
     /**

@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property EffortTier $time_budget
  * @property bool $overrides_schedule
  * @property string|null $override_note
+ * @property string|null $pick_note
  * @property NightSelection|null $selection
  * @property bool $is_locked
  *
@@ -36,6 +37,7 @@ class PlanNight extends Model
         'time_budget',
         'overrides_schedule',
         'override_note',
+        'pick_note',
         'selection',
         'recipe_id',
         'freezer_item_id',
@@ -56,10 +58,33 @@ class PlanNight extends Model
 
     /**
      * Has anything been chosen for this night yet?
+     *
+     * True once the picker has had a go, including the nights it had to give up
+     * on: "nothing fits" is a decision, and re-planning should not quietly roll
+     * the same dead end again.
      */
     public function isPlanned(): bool
     {
         return $this->selection !== null;
+    }
+
+    /**
+     * Is there something to cook or heat up on this night?
+     *
+     * False for a night off and for a night nothing fitted — both of which are
+     * planned, and neither of which is dinner.
+     */
+    public function hasMeal(): bool
+    {
+        return $this->selection?->hasMeal() ?? false;
+    }
+
+    /**
+     * Did the picker run out of options here?
+     */
+    public function nothingFits(): bool
+    {
+        return $this->selection === NightSelection::NothingFits;
     }
 
     /**

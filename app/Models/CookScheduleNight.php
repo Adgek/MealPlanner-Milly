@@ -28,6 +28,17 @@ class CookScheduleNight extends Model
     /** @use HasFactory<CookScheduleNightFactory> */
     use HasFactory;
 
+    /**
+     * What a night looks like before the household has set its week:
+     * "every night: together, 30 min" (docs/decisions.md).
+     *
+     * Shared by the seeder that installs the seven rows and by the Settings
+     * page (MM-4), which falls back to them if a row is ever missing.
+     */
+    public const DEFAULT_COOK = CookAssignment::Together;
+
+    public const DEFAULT_TIME_BUDGET = EffortTier::Workhorse30;
+
     protected $fillable = [
         'weekday',
         'cook',

@@ -363,12 +363,17 @@ final class MealPlanner
      * Freezer meals are not recorded: meal history is recipes, and the portion
      * that was spent is already the record. Idempotent, so it can run as often as
      * it likes.
+     *
+     * $now is an instant, like every other "now" on this class, and is read as the
+     * date the household is living in. That matters because it is the difference
+     * between right and a day early: 8pm in Toronto is already tomorrow in UTC, so
+     * a caller passing `now()` after 7pm all winter — which is exactly what MM-13's
+     * scheduled catch-up is — would otherwise record tonight's dinner as cooked
+     * before anybody ate it, and suppress that recipe for the whole lookback.
      */
-    public function recordPastNightsAsCooked(?DateTimeInterface $today = null): int
+    public function recordPastNightsAsCooked(?DateTimeInterface $now = null): int
     {
-        // Read as a calendar date, the way HouseholdSettings::at() reads one: any
-        // time or zone on it is ignored, so "the 21st" is the 21st.
-        $today = $today === null ? $this->today() : CalendarDate::of($today);
+        $today = $this->dateOf($now);
 
         $nights = PlanNight::query()
             ->where('selection', NightSelection::Recipe->value)

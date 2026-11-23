@@ -6,6 +6,8 @@ use App\Enums\EffortTier;
 use App\Enums\Weekday;
 use App\Models\FreezerItem;
 use App\Models\MealHistoryEntry;
+use App\Models\Plan;
+use App\Models\PlanNight;
 use App\Models\Recipe;
 use App\Planning\Exceptions\PlanningException;
 use App\Planning\MealPlanner;
@@ -139,4 +141,41 @@ it('still fills a night that is yet to come when it re-plans a part-finished win
     expect(array_slice($after, 0, 1))->toBe(array_slice($before, 0, 1))
         ->and(array_slice($after, 1))->not->toBe(array_slice($before, 1))
         ->and($nights->pluck('recipe_id')->unique())->toHaveCount(3);
+});
+
+it('reads "now" on the kitchen clock when it catches meal history up', function () {
+    // 8pm on the 14th in Toronto is already 1am on the 15th in UTC. Tonight's
+    // dinner has not been eaten yet, so it is not history — whether the caller
+    // passes the instant or lets the planner read the clock.
+    $recipe = Recipe::factory()->create();
+    $plan = Plan::factory()->window('2026-01-13')->create();
+    PlanNight::factory()->for($plan)->on('2026-01-14')->withRecipe($recipe)->create();
+    Carbon::setTestNow(Carbon::parse('2026-01-14 20:00:00', 'America/Toronto'));
+    $planner = new MealPlanner;
+
+    expect($planner->recordPastNightsAsCooked(Carbon::now()))->toBe(0)
+        ->and($planner->recordPastNightsAsCooked())->toBe(0)
+        ->and(MealHistoryEntry::count())->toBe(0);
+
+    // The next morning it is history, either way round.
+    Carbon::setTestNow(Carbon::parse('2026-01-15 07:00:00', 'America/Toronto'));
+
+    expect($planner->recordPastNightsAsCooked(Carbon::now()))->toBe(1)
+        ->and(MealHistoryEntry::sole()->cooked_on->toDateString())->toBe('2026-01-14');
+});
+
+it('reads the instant it is given as the night the household is living in', function () {
+    // Midnight UTC on the 14th is still the evening of the 13th in Toronto, so
+    // the 13th's dinner is on the table rather than in the past. Only the 12th is
+    // history. Every other "now" argument on the planner converts the same way.
+    $recipe = Recipe::factory()->create();
+    $plan = Plan::factory()->window('2026-01-11')->create();
+    PlanNight::factory()->for($plan)->on('2026-01-12')->withRecipe($recipe)->create();
+    PlanNight::factory()->for($plan)->on('2026-01-13')->withRecipe($recipe)->create();
+    PlanNight::factory()->for($plan)->on('2026-01-14')->withRecipe($recipe)->create();
+
+    $recorded = (new MealPlanner)->recordPastNightsAsCooked(Carbon::parse('2026-01-14 00:30:00', 'UTC'));
+
+    expect($recorded)->toBe(1)
+        ->and(MealHistoryEntry::sole()->cooked_on->toDateString())->toBe('2026-01-12');
 });

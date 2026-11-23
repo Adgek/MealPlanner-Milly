@@ -280,6 +280,14 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   Planning a night is not evidence anybody cooked it, so history is recorded once
   the night has passed — which is what the variety weighting reads.
 
+  Its argument is an **instant**, read as the date the household is living in, the
+  same as every other "now" the planner takes (`nextWindow()`,
+  `currentWindow()`). Only a date-shaped argument — `windowFor()`'s shopping date,
+  `HouseholdSettings::at()`'s date — is read without converting. The difference is
+  a whole day: 8pm in Toronto is already tomorrow in UTC, so MM-13's scheduled
+  catch-up passing `now()` after 7pm would otherwise record tonight's dinner as
+  cooked before anybody ate it.
+
 - **`php artisan milly:plan`** prints the next window from the current data, with
   `--seed`, `--replan`, `--dry-run` and `--shopping-date`. It is the front door
   until MM-8 and MM-9 exist, and after that it is still how you see what the rules

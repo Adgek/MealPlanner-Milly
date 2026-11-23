@@ -69,12 +69,35 @@ class PlanNight extends Model
      * Has anything been chosen for this night yet?
      *
      * True once the picker has had a go, including the nights it had to give up
-     * on: "nothing fits" is a decision, and re-planning should not quietly roll
-     * the same dead end again.
+     * on: "nothing fits" is a decision the picker reached, not an absence of one,
+     * which is what tells a page "the rules ruled everything out here" apart from
+     * "nobody has planned this yet".
+     *
+     * It is not the question "may the picker have another go" — see needsPicking().
      */
     public function isPlanned(): bool
     {
         return $this->selection !== null;
+    }
+
+    /**
+     * Should a plain plan run have a go at this night?
+     *
+     * A night nobody has picked for, and a night nothing fitted. The second one
+     * matters because the reason the picker stored is advice — "add a quick recipe
+     * she likes", "restock the freezer" — and taking that advice has to be enough:
+     * a plain `milly:plan` is what the household will run next. Before this, the
+     * dead end was treated as settled, so adding the three quick recipes the note
+     * asked for changed nothing and only `--replan` filled the night, which
+     * re-rolled every other night with it.
+     *
+     * The dead end is not a decision worth keeping, because the thing that made it
+     * a dead end is exactly what the household has just changed. A night that did
+     * fit is left alone, and a locked one is left alone whatever it holds.
+     */
+    public function needsPicking(): bool
+    {
+        return ! $this->isPlanned() || $this->nothingFits();
     }
 
     /**

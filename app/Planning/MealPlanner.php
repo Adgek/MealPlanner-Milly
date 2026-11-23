@@ -108,11 +108,14 @@ final class MealPlanner
     /**
      * Plan a window and save it.
      *
-     * Called again for the same window it fills in whatever is still unplanned
-     * and leaves the rest alone; with $replan it rolls every night again except
-     * the ones the household locked. Nights that carry a one-off override keep
-     * their cook and time; the others are refreshed from the weekly schedule, so
-     * a change in Settings reaches a plan that hasn't been shopped yet.
+     * Called again for the same window it fills in whatever is still open and
+     * leaves the rest alone; with $replan it rolls every night again except the
+     * ones the household locked. Nights that carry a one-off override keep their
+     * cook and time; the others are refreshed from the weekly schedule, so a
+     * change in Settings reaches a plan that hasn't been shopped yet.
+     *
+     * "Still open" includes a night nothing fitted (PlanNight::needsPicking()):
+     * its stored reason is advice, and taking the advice has to be enough.
      *
      * Meal history is caught up first: variety is measured against what we
      * actually ate, and nothing else in the app does that yet.
@@ -579,7 +582,7 @@ final class MealPlanner
         $toRoll = $nights->filter(
             fn (PlanNight $night) => ! $night->is_locked
                 && ! $this->hasPassed($night)
-                && ($replan || ! $night->isPlanned())
+                && ($replan || $night->needsPicking())
         );
         $rollingIds = $toRoll->modelKeys();
 

@@ -262,3 +262,30 @@ it('renames the cook in a reason that was already saved', function () {
     expect($output)->toContain('not tagged for Milly')
         ->and($output)->not->toContain('Partner');
 });
+
+it('fills a night nothing fitted once the vault has what it asked for', function () {
+    // The note the first run printed is advice. Taking it has to work from the
+    // same command the household just ran — not only from --replan, which would
+    // re-roll the nights that were already fine.
+    theWeekIs([], CookAssignment::Partner, EffortTier::Chaos15);
+
+    [, $output] = plannedWith();
+
+    expect($output)->toContain('Nothing fits')
+        ->and(PlanNight::where('selection', NightSelection::NothingFits->value)->count())->toBe(3);
+
+    Recipe::factory()->count(3)->sequence(
+        ['name' => 'Quick pasta'],
+        ['name' => 'Pupusas'],
+        ['name' => 'Rice and beans'],
+    )->create([
+        'cookable_by' => CookableBy::Partner,
+        'effort_tier' => EffortTier::Chaos15,
+    ]);
+
+    [, $output] = plannedWith();
+
+    expect($output)->not->toContain('Nothing fits')
+        ->and($output)->toContain('Quick pasta')
+        ->and(PlanNight::where('selection', NightSelection::NothingFits->value)->count())->toBe(0);
+});

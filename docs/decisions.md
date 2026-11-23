@@ -240,6 +240,18 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   `NothingFits` case, and the rest of the plan still goes ahead. Nobody nights are
   not a failure either: they get no recipe on purpose.
 
+  **A night nothing fitted is tried again on the next plain plan run**
+  (`PlanNight::needsPicking()`). The reason it carries is advice — "add a quick
+  recipe she likes", "restock the freezer" — so taking the advice has to be
+  enough; before this only `--replan` filled the night, and that re-rolled every
+  other unlocked night with it. The dead end is not a decision worth keeping,
+  because what made it a dead end is exactly what the household has just changed.
+  Nights that did fit are untouched, and a locked dead end stays as it is.
+
+  `PlanNight::isPlanned()` still counts "nothing fits" as planned: it is the
+  question "has the picker had a go", which is how a page tells "the rules ruled
+  everything out" from "nobody has planned this yet".
+
   **The reason is stored as counts and worded on the way out.**
   `plan_nights.pick_reason` holds what the picker rejected and why
   (`App\Planning\NothingFitsReason`); `Pick::explain($cookLabel)` turns it into a

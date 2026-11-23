@@ -659,3 +659,87 @@ it('clears a locked night when nobody is cooking after all', function () {
         // The lock stands: the household said this night is settled.
         ->and($night->is_locked)->toBeTrue();
 });
+
+it('tries a night nothing fitted again when the vault has changed', function () {
+    // The reason the night carries tells the household what to add ("not tagged
+    // for Partner", "nothing short enough"). Adding it has to be enough: a plain
+    // plan run is what they will do next, and before this it changed nothing —
+    // only --replan filled the night, and that re-rolled every other night too.
+    theWeekIs([], CookAssignment::Partner, EffortTier::Chaos15);
+    $planner = new MealPlanner;
+
+    expect($planner->planWindow()->nights->every(fn (PlanNight $night) => $night->nothingFits()))
+        ->toBeTrue();
+
+    // Three quick meals she likes making, which is exactly what the note asked for.
+    Recipe::factory()->count(3)->create([
+        'cookable_by' => CookableBy::Partner,
+        'effort_tier' => EffortTier::Chaos15,
+    ]);
+
+    $nights = $planner->planWindow()->nights;
+
+    expect($nights->every(fn (PlanNight $night) => $night->selection === NightSelection::Recipe))
+        ->toBeTrue()
+        ->and($nights->pluck('pick_reason')->filter())->toBeEmpty();
+});
+
+it('leaves the nights that did fit alone while it retries the one that did not', function () {
+    // Monday and Tuesday are fine; Wednesday is my partner on her own with
+    // nothing quick in the vault. Filling Wednesday must not re-roll the other two.
+    theWeekIs([Weekday::Wednesday->value => [CookAssignment::Partner, EffortTier::Chaos15]]);
+    Recipe::factory()->count(4)->create([
+        'cookable_by' => CookableBy::Me,
+        'effort_tier' => EffortTier::Workhorse30,
+    ]);
+    $planner = new MealPlanner;
+    $before = $planner->planWindow(seed: 1)->nights->pluck('recipe_id', 'date')->all();
+
+    expect($planner->planFor($planner->nextWindow())->nights[2]->nothingFits())->toBeTrue();
+
+    Recipe::factory()->create([
+        'name' => 'Quick pasta',
+        'cookable_by' => CookableBy::Partner,
+        'effort_tier' => EffortTier::Chaos15,
+    ]);
+
+    $nights = $planner->planWindow(seed: 2)->nights;
+
+    expect($nights[0]->recipe_id)->toBe($before[array_keys($before)[0]])
+        ->and($nights[1]->recipe_id)->toBe($before[array_keys($before)[1]])
+        ->and($nights[2]->recipe->name)->toBe('Quick pasta');
+});
+
+it('says nothing fits again, with a fresh reason, when it still does not', function () {
+    theWeekIs([], CookAssignment::Partner, EffortTier::Chaos15);
+    $planner = new MealPlanner;
+    $plan = $planner->planWindow();
+
+    expect($planner->picksFor($plan)[0]->explain(HouseholdSettings::cookLabel(...)))
+        ->toContain('the recipe vault is empty');
+
+    // The household adds a recipe, but not one she would make on her own. The
+    // night still fits nothing, and says something more useful about why.
+    Recipe::factory()->create(['cookable_by' => CookableBy::Me, 'effort_tier' => EffortTier::Chaos15]);
+    $plan = $planner->planWindow();
+
+    expect($plan->nights->every(fn (PlanNight $night) => $night->nothingFits()))->toBeTrue()
+        ->and($planner->picksFor($plan)[0]->explain(HouseholdSettings::cookLabel(...)))
+        ->toContain('1 of 1 recipes are not tagged for Partner');
+});
+
+it('keeps a locked night that nothing fitted', function () {
+    // The household locked a dead end on purpose — they know Wednesday is a
+    // write-off. A plain plan run leaves it alone.
+    theWeekIs([], CookAssignment::Partner, EffortTier::Chaos15);
+    $planner = new MealPlanner;
+    $locked = $planner->lockNight($planner->planWindow()->nights[0]);
+
+    Recipe::factory()->count(3)->create([
+        'cookable_by' => CookableBy::Partner,
+        'effort_tier' => EffortTier::Chaos15,
+    ]);
+    $planner->planWindow();
+
+    expect($locked->refresh()->nothingFits())->toBeTrue();
+});

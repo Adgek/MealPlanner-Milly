@@ -11,6 +11,7 @@ use App\Models\Plan;
 use App\Models\PlanNight;
 use App\Models\Recipe;
 use App\Planning\MealPlanner;
+use App\Settings\HouseholdSettings;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
@@ -75,6 +76,27 @@ it('prints the dinners it chose', function () {
     [, $output] = plannedWith();
 
     expect($output)->toContain('Chili');
+});
+
+it('calls the cooks by the household’s own names', function () {
+    // MM-4 put the cooks' names in Settings, and decided that anything showing a
+    // cook to a person reads them from there. The plan is the first thing that
+    // does, so renaming a cook has to rename them in this table.
+    HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
+    theWeekIs([
+        Weekday::Monday->value => [CookAssignment::Me, EffortTier::Workhorse30],
+        Weekday::Tuesday->value => [CookAssignment::Partner, EffortTier::Chaos15],
+    ], CookAssignment::Nobody);
+    Recipe::factory()->count(4)->create([
+        'cookable_by' => CookableBy::Both,
+        'effort_tier' => EffortTier::Chaos15,
+    ]);
+
+    [, $output] = plannedWith();
+
+    expect($output)->toContain('Adrian')
+        ->and($output)->toContain('Milly')
+        ->and($output)->not->toContain('Partner');
 });
 
 it('prints a freezer meal as coming out of the freezer', function () {

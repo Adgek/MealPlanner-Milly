@@ -7,6 +7,7 @@ use App\Planning\CalendarDate;
 use App\Planning\MealPlanner;
 use App\Planning\Pick;
 use App\Planning\ShoppingWindow;
+use App\Settings\HouseholdSettings;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -89,7 +90,9 @@ class PlanWindowCommand extends Command
     {
         return [
             $pick->night->label(),
-            $pick->night->cook->label().($pick->night->overridesSchedule ? ' *' : ''),
+            // The household's own name for the cook, not the enum's: renaming a
+            // cook in Settings has to rename them here too (MM-4).
+            HouseholdSettings::cookLabel($pick->night->cook).($pick->night->overridesSchedule ? ' *' : ''),
             $pick->night->timeBudget->label(),
             $pick->describe(),
             $this->note($pick),

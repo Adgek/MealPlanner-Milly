@@ -196,10 +196,16 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
 - **One night has one dinner, across every plan there is.** Changing the shopping
   days moves where the windows fall, so the plan already out can still claim
   nights that now belong to the window being planned. `planWindow()` takes those
-  nights off the older plan — the shop that will buy the food wins — releasing any
-  freezer portion they were holding, narrowing that plan's stored window to what
-  it has left, and deleting it outright if nothing is left. A night that has
-  already gone by stays with the plan that fed it.
+  nights off the older plan — the shop that will buy the food wins — narrowing that
+  plan's stored window to what it has left and deleting it outright if nothing is
+  left. A night that has already gone by stays with the plan that fed it.
+
+  **The night itself moves; it is not thrown away and built again.** The lock, the
+  one-off override, the dinner and the freezer portion it holds belong to the
+  night, not to the shop that paid for it — a lock survives a re-plan, so it
+  survives the shopping days moving under it. The only night given up is one the
+  new plan already has a row for, and then it is the duplicate that goes, with its
+  portion handed back to the stash.
 
   MM-9's daily reminder and MM-14's dashboard can therefore read
   `plan_nights.date` and expect one row. Before this they could get two dinners

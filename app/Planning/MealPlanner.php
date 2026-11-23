@@ -458,10 +458,16 @@ final class MealPlanner
      * recordPastNightsAsCooked() would write two history rows for one dinner.
      *
      * The window being planned wins, because it is the shop that will actually
-     * buy the food. A night still to come hands its freezer portion back on the
-     * way out; a night that has gone by is history and stays with the plan that
-     * fed it. A plan left with no nights is no longer a plan, so it goes; one left
-     * shorter has its stored window narrowed to the nights it still has.
+     * buy the food — but the **night moves rather than being destroyed and built
+     * again**. The lock, the one-off override, the dinner and the freezer portion
+     * it is holding all belong to the night, not to the shop that paid for it: a
+     * lock survives a re-plan, so it has to survive the shopping days moving under
+     * it. Only a night this plan already has a row for is given up, and then it is
+     * the other plan's row that goes, with its portion handed back.
+     *
+     * A night that has gone by is history and stays with the plan that fed it. A
+     * plan left with no nights is no longer a plan, so it goes; one left shorter
+     * has its stored window narrowed to the nights it still has.
      */
     private function claimNightsOfOtherPlans(Plan $plan, ShoppingWindow $window): void
     {
@@ -474,12 +480,24 @@ final class MealPlanner
             ->get()
             ->reject(fn (PlanNight $night) => $night->hasPassed());
 
+        // Read before anything moves: once a night's plan_id is rewritten it no
+        // longer says where it came from.
+        $origins = $claimed->pluck('plan_id')->unique()->all();
+        $ours = $plan->nights()->get()->keyBy(fn (PlanNight $night) => $night->date->toDateString());
+
         foreach ($claimed as $night) {
-            $this->releaseNight($night);
-            $night->delete();
+            if ($ours->has($night->date->toDateString())) {
+                $this->releaseNight($night);
+                $night->delete();
+
+                continue;
+            }
+
+            $night->plan_id = $plan->getKey();
+            $night->save();
         }
 
-        foreach ($claimed->pluck('plan_id')->unique() as $planId) {
+        foreach ($origins as $planId) {
             $this->reshapeOrDrop(Plan::query()->find($planId));
         }
     }

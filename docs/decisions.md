@@ -204,10 +204,24 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   gets her quick meals or a freezer portion. That is `partner_solo_effort_cap`
   doing the narrowing, not a rule about Saturdays.
 
-- **The freezer stash is counted, and a reservation is real.** A planned freezer
-  meal holds one portion for as long as it is planned; a re-roll or a hand-picked
-  replacement releases it. `MealPool` is the window's ledger, so two nights in one
-  window can't both spend the last portion.
+- **The freezer stash is counted, and a reservation says so itself.** A planned
+  freezer meal holds one portion for as long as it is planned; a re-roll or a
+  hand-picked replacement releases it. The holding is recorded on the night
+  (`plan_nights.holds_freezer_portion`), not inferred from "the selection is a
+  freezer item", and that flag is what a release is conditional on. So releasing a
+  night twice, releasing a row a factory or an import wrote, or releasing a night
+  that never reserved cannot move the count. `MealPlanner` is the only thing that
+  takes a portion out; `PlanNight::releaseFreezerPortion()` the only thing that
+  puts one back.
+
+  `MealPool` is the ledger *within one roll* — it is what stops two nights of the
+  same window spending the last portion — but it is in memory and lives only as
+  long as the call. The durable count is `freezer_items.portions_left` plus the
+  flag on the night.
+
+  **Deleting a plan releases what its nights were holding**, in a `deleting` event
+  on `Plan`. It has to be the parent: `plan_nights.plan_id` cascades in MySQL, so
+  no `deleting` event on `PlanNight` can ever fire.
 
 - **"Nothing fits" is a stored outcome, not a failure.** `NightSelection` gained a
   `NothingFits` case and `plan_nights` gained a `pick_note` column carrying the

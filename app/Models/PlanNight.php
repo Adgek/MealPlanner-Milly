@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $override_note
  * @property string|null $pick_note
  * @property NightSelection|null $selection
+ * @property bool $holds_freezer_portion
  * @property bool $is_locked
  *
  * @method static PlanNightFactory factory($count = null, $state = [])
@@ -41,6 +42,7 @@ class PlanNight extends Model
         'selection',
         'recipe_id',
         'freezer_item_id',
+        'holds_freezer_portion',
         'is_locked',
     ];
 
@@ -52,6 +54,7 @@ class PlanNight extends Model
             'time_budget' => EffortTier::class,
             'selection' => NightSelection::class,
             'overrides_schedule' => 'boolean',
+            'holds_freezer_portion' => 'boolean',
             'is_locked' => 'boolean',
         ];
     }
@@ -85,6 +88,46 @@ class PlanNight extends Model
     public function nothingFits(): bool
     {
         return $this->selection === NightSelection::NothingFits;
+    }
+
+    /**
+     * Is this night holding a portion out of the freezer stash?
+     *
+     * The reservation says so itself rather than being read off "the selection is
+     * a freezer item": a row written by a factory, a seeder or an import points at
+     * a freezer item without ever having spent a portion, and the ledger has to
+     * tell the two apart (docs/decisions.md, "Freezer stash").
+     */
+    public function holdsFreezerPortion(): bool
+    {
+        return $this->holds_freezer_portion === true;
+    }
+
+    /**
+     * Put this night's freezer portion back in the stash, and say whether one
+     * really went back.
+     *
+     * The only thing that ever increments portions_left, and it is conditional on
+     * the reservation: releasing twice, releasing a hand-written row, or releasing
+     * a night that never reserved cannot invent food. The flag is cleared here but
+     * the row is left to the caller to save — the planner saves the whole night
+     * once, and Plan's cascade is about to delete it.
+     */
+    public function releaseFreezerPortion(): bool
+    {
+        if (! $this->holdsFreezerPortion()) {
+            return false;
+        }
+
+        $this->holds_freezer_portion = false;
+
+        if ($this->freezer_item_id === null) {
+            return false;
+        }
+
+        FreezerItem::query()->whereKey($this->freezer_item_id)->increment('portions_left');
+
+        return true;
     }
 
     /**

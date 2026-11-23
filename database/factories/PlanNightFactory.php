@@ -59,6 +59,11 @@ class PlanNightFactory extends Factory
 
     /**
      * A night pulling a meal out of the freezer.
+     *
+     * It points at the item but does **not** hold a portion: nothing here spends
+     * one out of the stash, so claiming a reservation would make the next release
+     * hand back a portion that was never frozen. Only MealPlanner takes portions
+     * out, and only it sets holds_freezer_portion.
      */
     public function withFreezerItem(?FreezerItem $item = null): static
     {
@@ -66,6 +71,7 @@ class PlanNightFactory extends Factory
             'selection' => NightSelection::FreezerItem,
             'freezer_item_id' => $item?->id ?? FreezerItem::factory(),
             'recipe_id' => null,
+            'holds_freezer_portion' => false,
         ]);
     }
 

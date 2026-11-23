@@ -40,6 +40,29 @@ class Plan extends Model
     }
 
     /**
+     * Hand every portion this plan's nights are holding back to the freezer
+     * before the plan goes.
+     *
+     * This has to live on the parent. `plan_nights.plan_id` cascades in MySQL, so
+     * deleting a plan removes its nights without Eloquent ever loading them and
+     * **no `deleting` event on `PlanNight` can fire** — a model event on the child
+     * would be silently dead code. The cascade is worth keeping (it is what makes
+     * a half-deleted plan impossible), so the plan releases the reservations
+     * itself, on its way out.
+     *
+     * Without this, deleting a plan that held a freezer meal would lose the
+     * portion for good: the stash would stay down by one for a dinner nobody ate,
+     * and MM-12's low-stash warning would be counting a number that never
+     * happened.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (self $plan) {
+            $plan->nights()->get()->each(fn (PlanNight $night) => $night->releaseFreezerPortion());
+        });
+    }
+
+    /**
      * The nights this shop has to cover, in order.
      *
      * @return HasMany<PlanNight, $this>

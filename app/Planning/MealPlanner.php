@@ -256,7 +256,7 @@ final class MealPlanner
             $this->releaseNight($night);
 
             if ($meal instanceof FreezerItem) {
-                $this->reservePortion($meal->getKey());
+                $this->reservePortionFor($night, $meal->getKey());
                 $night->selection = NightSelection::FreezerItem;
                 $night->freezer_item_id = $meal->getKey();
             } else {
@@ -583,7 +583,7 @@ final class MealPlanner
     private function applyPick(PlanNight $night, Pick $pick): void
     {
         if ($pick->selection === NightSelection::FreezerItem && $pick->freezerItemId !== null) {
-            $this->reservePortion($pick->freezerItemId);
+            $this->reservePortionFor($night, $pick->freezerItemId);
         }
 
         $night->selection = $pick->selection;
@@ -595,12 +595,15 @@ final class MealPlanner
 
     /**
      * Let go of whatever a night was holding, portion included.
+     *
+     * The portion only goes back if the night was really holding one: the night
+     * carries its own reservation, so this is safe to call on a night that was
+     * already released, on a row somebody wrote by hand, and on a night that
+     * never had a freezer meal at all.
      */
     private function releaseNight(PlanNight $night): void
     {
-        if ($night->selection === NightSelection::FreezerItem && $night->freezer_item_id !== null) {
-            FreezerItem::query()->whereKey($night->freezer_item_id)->increment('portions_left');
-        }
+        $night->releaseFreezerPortion();
 
         $night->selection = null;
         $night->recipe_id = null;
@@ -631,7 +634,7 @@ final class MealPlanner
     private function restore(PlanNight $night, array $previous, string $note): void
     {
         if ($previous['selection'] === NightSelection::FreezerItem && $previous['freezer_item_id'] !== null) {
-            $this->reservePortion($previous['freezer_item_id']);
+            $this->reservePortionFor($night, $previous['freezer_item_id']);
         }
 
         $night->selection = $previous['selection'];
@@ -642,9 +645,14 @@ final class MealPlanner
     }
 
     /**
-     * Spend one portion of a freezer meal.
+     * Spend one portion of a freezer meal on a night, and record on the night
+     * that it is holding it.
+     *
+     * The flag is what makes the release side safe, so the two are written
+     * together: this is the only place a portion leaves the stash, and
+     * PlanNight::releaseFreezerPortion() the only place one comes back.
      */
-    private function reservePortion(int $freezerItemId): void
+    private function reservePortionFor(PlanNight $night, int $freezerItemId): void
     {
         $item = FreezerItem::query()->lockForUpdate()->findOrFail($freezerItemId);
 
@@ -653,6 +661,7 @@ final class MealPlanner
         }
 
         $item->decrement('portions_left');
+        $night->holds_freezer_portion = true;
     }
 
     // -----------------------------------------------------------------

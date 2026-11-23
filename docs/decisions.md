@@ -164,6 +164,89 @@ Every value above is now editable at `/settings`, as one Livewire form
   time budget when it is made (above), so this needed no new mechanism — but it is
   the promise the page makes in writing, and `SettingsPageTest` pins it down.
 
+### What MM-6 added (the meal picker)
+
+The picker is in `app/Planning`. Every rule is a class that can be constructed with
+plain values and called with no database and no framework boot, so the parts that
+will be "wrong in a way nobody notices until dinner" are unit-tested on their own
+(AGENTS.md). `MealPlanner` is the one door other tickets use; the classes behind it
+(`ShoppingCalendar`, `WeeklyCookSchedule`, `NightBrief`, `NightPicker`,
+`WindowPicker`, `MealPool`, `SeededRandom`) are where the rules actually live.
+
+- **`MealPlanner` is the API the rest of the app calls.** MM-7, MM-8, MM-9, MM-11,
+  MM-12 and MM-14 should go through it rather than re-deriving any of this:
+  `nextWindow()`, `currentWindow()`, `windowFor()`, `planFor()`, `planWindow()`,
+  `previewWindow()`, `picksFor()`, `rerollNight()`, `lockNight()`, `unlockNight()`,
+  `chooseMeal()`, `setOverride()`, `clearOverride()` and
+  `recordPastNightsAsCooked()`. A `Pick` is what a page or a message renders: the
+  night, what was chosen, and the note explaining it.
+
+- **A window is a span of calendar dates, and the shop's time is not part of it.**
+  `ShoppingCalendar` derives "the next day through the next shopping day,
+  inclusive" from the household's shopping **days** only. With the defaults, a
+  Sunday shop covers Mon–Wed and a Wednesday shop covers Thu–Sun. A shop never
+  covers the night of the shop before it, and any date produces a sensible window,
+  so an unplanned mid-week shop still works. MM-9 needs the shopping *time* to know
+  when to post; nothing about which nights a shop feeds depends on it.
+
+  There is **no weekday name anywhere in the picker.** Change the setting to Tuesday
+  and Friday and the windows follow.
+
+- **Three more settings, not constants.** `variety_lookback_days` (21),
+  `partner_solo_effort_cap` (15-min chaos) and
+  `freezer_meals_on_chaos_nights_only` (true). `PlanningRules::fromSettings()`
+  reads them, and the picker takes them as plain values so a rule can be tested at
+  a setting the household hasn't chosen. The Settings page (MM-4) can expose them
+  whenever the household wants to turn a dial; nothing breaks until it does.
+
+- **A solo night narrows the time available, never widens it.** A 60-minute
+  Saturday that my partner is on her own for is still a 15-minute night, so she
+  gets her quick meals or a freezer portion. That is `partner_solo_effort_cap`
+  doing the narrowing, not a rule about Saturdays.
+
+- **The freezer stash is counted, and a reservation is real.** A planned freezer
+  meal holds one portion for as long as it is planned; a re-roll or a hand-picked
+  replacement releases it. `MealPool` is the window's ledger, so two nights in one
+  window can't both spend the last portion.
+
+- **"Nothing fits" is a stored outcome, not a failure.** `NightSelection` gained a
+  `NothingFits` case and `plan_nights` gained a `pick_note` column carrying the
+  picker's reason in the household's words ("not tagged for Partner", "nothing short
+  enough"). The rest of the plan still goes ahead, and the reason is what MM-8 and
+  MM-9 show. Nobody nights are not a failure either: they get no recipe on purpose.
+
+- **A re-plan keeps locked nights.** `planWindow(..., replan: true)` rolls every
+  night that isn't locked and leaves the locked ones exactly as they are, which is
+  what makes the plan page's lock worth having.
+
+- **The seed is an argument, not a stored column.** The same seed gives the same
+  plan, which is how the tests pin the rules down. Plans deliberately don't
+  remember a seed: a re-roll the household asks for should be a genuinely fresh
+  roll, not a repeat.
+
+- **Variety is a weighted draw, not a ban.** Every eligible meal gets at least one
+  ticket, plus one more for each day since it was last cooked, capped at
+  `variety_lookback_days`; a meal never cooked gets the maximum. So a vault the
+  household cooked straight through yesterday still produces dinner. **MM-11's
+  bulk-buy pairing is a preference and has to work with this**, by leaning on the
+  draw rather than overriding it.
+
+  "No meal twice in one window" is the hard rule; being cooked recently is only a
+  thumb on the scale.
+
+- **Meal history is written by `recordPastNightsAsCooked()`, not by planning.**
+  Planning a night is not evidence anybody cooked it, so history is recorded once
+  the night has passed — which is what the variety weighting reads.
+
+- **`php artisan milly:plan`** prints the next window from the current data, with
+  `--seed`, `--replan`, `--dry-run` and `--shopping-date`. It is the front door
+  until MM-8 and MM-9 exist, and after that it is still how you see what the rules
+  did and why a night came out empty. Anything it shows a person goes through
+  `HouseholdSettings::cookLabel()`.
+
+- **Still out:** bulk-buy pairing (MM-11) and kitchen projects (MM-12) both change
+  the picker, and MM-11's ticket says not to run the two at once.
+
 ### Open, not blocking
 
 - **Reaching the app away from home.** Not decided. Today the answer is "you can't". If the household wants the plan page or Slack links to work on mobile data, the options are something like Tailscale (and then a login, because the app would be reachable from more places) or leaving it home-only. MM-10 can raise this again.

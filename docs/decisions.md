@@ -258,7 +258,18 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
 
 - **A re-plan keeps locked nights.** `planWindow(..., replan: true)` rolls every
   night that isn't locked and leaves the locked ones exactly as they are, which is
-  what makes the plan page's lock worth having.
+  what makes the plan page's lock worth having. A lock outranks the picking rules
+  too: an override that narrows a locked night — my 60-minute Saturday becoming my
+  partner's solo night — keeps the dinner the household asked for.
+
+  **Unless the override leaves nobody cooking.** Then the meal goes and the
+  freezer portion comes back, lock and all: a lock says "keep this dinner" and
+  `nobody` says there isn't one, and the household typed the second one just now.
+  The alternative was refusing the override, which would mean unlocking a night
+  before being allowed to say you are eating out, and would leave MM-8, MM-9 and
+  MM-14 rendering "Nobody cooking" against a dinner while a portion stayed held
+  for a meal nobody would eat. The lock itself stands: a settled night off is
+  still settled.
 
 - **A night that has gone by is history, and the planner will not touch it.**
   "Until you shop, you can re-roll, lock or swap any night" — and only until then.

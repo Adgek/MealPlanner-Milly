@@ -437,6 +437,12 @@ it('clears a night and its freezer portion when nobody is cooking', function () 
 });
 
 it('leaves a locked night alone when its date is overridden', function () {
+    // A lock outranks the picking rules: the household wants this dinner on this
+    // night, and an override that still leaves somebody cooking does not take it
+    // away — even though my partner on her own would never be handed the project.
+    // The one override that does is one that leaves nobody cooking, because then
+    // there is no dinner to keep ('clears a locked night when nobody is cooking
+    // after all').
     Recipe::factory()->count(4)->create(['cookable_by' => CookableBy::Me, 'effort_tier' => EffortTier::Project60]);
     theWeekIs([], CookAssignment::Me, EffortTier::Project60);
     $planner = new MealPlanner;
@@ -446,7 +452,8 @@ it('leaves a locked night alone when its date is overridden', function () {
     $night = $planner->setOverride($night, cook: CookAssignment::Partner, note: 'I am travelling');
 
     expect($night->cook)->toBe(CookAssignment::Partner)
-        ->and($night->recipe_id)->toBe($locked);
+        ->and($night->recipe_id)->toBe($locked)
+        ->and($night->is_locked)->toBeTrue();
 });
 
 it('puts a night back on the normal week', function () {
@@ -626,4 +633,29 @@ it('plans from the household clock, not the server clock', function () {
 
     expect($plan->shopping_date->toDateString())->toBe('2026-01-11')
         ->and($plan->first_night->toDateString())->toBe('2026-01-12');
+});
+
+it('clears a locked night when nobody is cooking after all', function () {
+    // A lock says "keep this dinner"; an override to nobody says there isn't one.
+    // Both cannot hold, and the household just typed the second — so the meal
+    // goes and the freezer portion comes back, lock or no lock. Leaving the meal
+    // would have MM-8, MM-9 and MM-14 all showing "Nobody cooking" against a
+    // dinner, and would strand the portion for ever.
+    theWeekIs([], CookAssignment::Partner, EffortTier::Chaos15);
+    $soup = FreezerItem::factory()->portions(1)->create();
+    $planner = new MealPlanner;
+    $night = $planner->chooseMeal($planner->planWindow()->nights[0], $soup, lock: true);
+
+    expect($soup->refresh()->portions_left)->toBe(0)
+        ->and($night->is_locked)->toBeTrue();
+
+    $night = $planner->setOverride($night, cook: CookAssignment::Nobody, note: 'Eating out');
+
+    expect($night->cook)->toBe(CookAssignment::Nobody)
+        ->and($night->selection)->toBe(NightSelection::NightOff)
+        ->and($night->freezer_item_id)->toBeNull()
+        ->and($night->holds_freezer_portion)->toBeFalse()
+        ->and($soup->refresh()->portions_left)->toBe(1)
+        // The lock stands: the household said this night is settled.
+        ->and($night->is_locked)->toBeTrue();
 });

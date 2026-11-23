@@ -643,6 +643,15 @@ final class MealPlanner
     /**
      * Keep the meal a night already has when it still fits, roll again when it
      * doesn't.
+     *
+     * A lock outranks the picking rules: the household wants this dinner on this
+     * night, so an override that narrows the night does not take it away. The one
+     * exception is an override that leaves **nobody** cooking. A lock says "keep
+     * this dinner" and nobody says "there isn't one", and the household typed the
+     * second one just now — so the meal goes. Otherwise the night would read
+     * "Nobody cooking" against a dinner on MM-8's page, MM-9's post and MM-14's
+     * dashboard, and a freezer portion would be held for a meal nobody will ever
+     * eat. The lock itself stands: a settled night off is still settled.
      */
     private function repickIfNeeded(PlanNight $night): void
     {
@@ -652,7 +661,11 @@ final class MealPlanner
             return;
         }
 
-        if ($night->is_locked || ! $night->isPlanned()) {
+        if ($night->is_locked && $night->cook->cooks()) {
+            return;
+        }
+
+        if (! $night->isPlanned()) {
             return;
         }
 

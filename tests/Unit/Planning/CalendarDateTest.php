@@ -75,3 +75,17 @@ it('counts days across a daylight-saving change without losing an hour', functio
         CarbonImmutable::parse('2026-03-08 00:00', 'America/Toronto'),
     ))->toBe(1);
 });
+
+it('knows a night has gone by, on the kitchen clock and not the server’s', function () {
+    // 8pm on the 14th in Toronto, which is already 1am on the 15th in UTC. The
+    // fence the planner keeps around a night that was cooked turns on this: at
+    // this moment the household can still change their mind about tonight.
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-01-14 20:00:00', 'America/Toronto'));
+
+    expect(CalendarDate::hasPassed(CalendarDate::parse('2026-01-13'), 'America/Toronto'))->toBeTrue()
+        // Tonight is not the past.
+        ->and(CalendarDate::hasPassed(CalendarDate::parse('2026-01-14'), 'America/Toronto'))->toBeFalse()
+        ->and(CalendarDate::hasPassed(CalendarDate::parse('2026-01-15'), 'America/Toronto'))->toBeFalse()
+        // On the server's clock it is already tomorrow, and tonight would be over.
+        ->and(CalendarDate::hasPassed(CalendarDate::parse('2026-01-14'), 'UTC'))->toBeTrue();
+});

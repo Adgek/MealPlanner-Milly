@@ -294,11 +294,25 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
 
 - **A night that has gone by is history, and the planner will not touch it.**
   "Until you shop, you can re-roll, lock or swap any night" — and only until then.
-  `rerollNight()` and `chooseMeal()` refuse a date before today on the kitchen
-  clock (`PlanningException::pastNight`), and `planWindow()` never rolls one, even
-  with `replan: true` or a `--shopping-date` pointing at a finished window. Tonight
-  is not the past: the fence falls at midnight, so the household can still change
-  their mind at 8pm.
+  The rule is `CalendarDate::hasPassed()`, asked of a row as
+  `PlanNight::hasPassed()`, and it holds on every path:
+
+  - `rerollNight()` and `chooseMeal()` refuse (`PlanningException::pastNight`);
+  - `planWindow()` never rolls one, even with `replan: true` or a
+    `--shopping-date` pointing at a finished window;
+  - its cook and time are never refreshed from the week as it is now — the plan is
+    the record of who actually cooked, and the dinner was chosen for that cook;
+  - it is never invented. A window that starts in the past (which is what
+    `currentWindow()` returns) would otherwise mint a second row for a night
+    another plan is already the record of, and nothing could ever fill it;
+  - it is never pruned when the shopping days shorten the window, and never
+    claimed by another plan. A shorter window does not un-happen a night that was
+    cooked, and the plan is the only record that it was;
+  - its freezer portion is never handed back, wherever the release comes from.
+
+  Tonight is not the past: the fence falls at midnight on the household's clock,
+  so they can still change their mind at 8pm in Toronto where the server already
+  says tomorrow.
 
   Two things depended on this and had nothing enforcing it. Re-rolling a past
   freezer night put a portion back in the stash that was eaten days ago. And

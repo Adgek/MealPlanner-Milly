@@ -128,14 +128,15 @@ class PlanNight extends Model
      * the **kitchen** clock, so the household can still change their mind at 8pm
      * in Toronto when the server already says tomorrow.
      *
-     * The one definition of the fence, because more than one thing needs it: the
-     * planner refuses to re-roll or swap a past night (docs/decisions.md), and
-     * releasing a past night's freezer portion would put food back in the stash
-     * that was eaten.
+     * This is the question asked of a row; CalendarDate::hasPassed() is the rule
+     * itself, unit-tested with no database behind it. More than one thing needs
+     * it: the planner refuses to re-roll or swap a past night, never re-rolls or
+     * re-dates one while planning, and releasing a past night's freezer portion
+     * would put food back in the stash that was eaten (docs/decisions.md).
      */
     public function hasPassed(): bool
     {
-        return CalendarDate::of($this->date)->lessThan(CalendarDate::today(HouseholdSettings::timeZone()));
+        return CalendarDate::hasPassed($this->date, HouseholdSettings::timeZone());
     }
 
     /**

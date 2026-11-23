@@ -527,6 +527,14 @@ final class MealPlanner
     /**
      * One night row per night of the window, each carrying the cook and the time
      * in force for that date.
+     *
+     * A night that has gone by is left out of all of it. It is not invented — a
+     * window that starts in the past (which is what currentWindow() returns) would
+     * otherwise mint a row for a night another plan is already the record of, and
+     * nothing could ever fill it. Its cook and time are not refreshed from the
+     * week as it is now, because the plan is the record of who actually cooked and
+     * the dinner was chosen for the cook it had. And it is not pruned when the
+     * window shrinks: a shorter window does not un-happen a night that was cooked.
      */
     private function syncNightsWith(Plan $plan, ShoppingWindow $window): void
     {
@@ -538,9 +546,14 @@ final class MealPlanner
             $key = $date->toDateString();
             $wanted[$key] = true;
             $night = $existing->get($key);
-            $brief = $schedule->nightOn($date);
 
             if ($night === null) {
+                if (CalendarDate::hasPassed($date, HouseholdSettings::timeZone())) {
+                    continue;
+                }
+
+                $brief = $schedule->nightOn($date);
+
                 $plan->nights()->create([
                     'date' => $key,
                     'cook' => $brief->cook,
@@ -550,11 +563,14 @@ final class MealPlanner
                 continue;
             }
 
-            // A one-off override is the household's answer for this date, and a
-            // locked night is settled: both outrank the weekly schedule.
-            if ($night->overrides_schedule || $night->is_locked) {
+            // A night that has gone by keeps the cook it was cooked by. A one-off
+            // override is the household's answer for this date, and a locked night
+            // is settled: all three outrank the weekly schedule.
+            if ($night->hasPassed() || $night->overrides_schedule || $night->is_locked) {
                 continue;
             }
+
+            $brief = $schedule->nightOn($date);
 
             if ($night->cook === $brief->cook && $night->time_budget === $brief->timeBudget) {
                 continue;
@@ -569,14 +585,13 @@ final class MealPlanner
         }
 
         // Nights this window no longer covers, because the shopping days changed.
+        // A night that has gone by stays: the plan is the only record that it
+        // happened, and meal history is written off these rows.
         foreach ($existing as $key => $night) {
-            if (isset($wanted[$key])) {
+            if (isset($wanted[$key]) || $night->hasPassed()) {
                 continue;
             }
 
-            // A night still to come hands its portion back on the way out; one
-            // that has gone by ate it, which PlanNight::releaseFreezerPortion()
-            // is what decides.
             $this->releaseNight($night);
             $night->delete();
         }

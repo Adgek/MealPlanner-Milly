@@ -68,6 +68,20 @@ final class CalendarDate
     }
 
     /**
+     * Is this calendar date behind today, on a given clock?
+     *
+     * The fence the planner keeps around a night that has gone by: what was on it
+     * is what was cooked, so it cannot be re-rolled, swapped, re-dated or have its
+     * freezer portion handed back (docs/decisions.md). Today is **not** past —
+     * tonight's dinner is still a decision — and the zone is the household's, so
+     * 8pm in Toronto is still today even where the server says tomorrow.
+     */
+    public static function hasPassed(DateTimeInterface $date, string $timeZone): bool
+    {
+        return self::of($date)->lessThan(self::today($timeZone));
+    }
+
+    /**
      * Whole days from one calendar date to another, negative when $to is earlier.
      */
     public static function daysBetween(DateTimeInterface $from, DateTimeInterface $to): int

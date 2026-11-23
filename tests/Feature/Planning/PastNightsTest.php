@@ -3,6 +3,7 @@
 use App\Enums\CookableBy;
 use App\Enums\CookAssignment;
 use App\Enums\EffortTier;
+use App\Enums\NightSelection;
 use App\Enums\Weekday;
 use App\Models\FreezerItem;
 use App\Models\MealHistoryEntry;
@@ -11,6 +12,7 @@ use App\Models\PlanNight;
 use App\Models\Recipe;
 use App\Planning\Exceptions\PlanningException;
 use App\Planning\MealPlanner;
+use App\Settings\HouseholdSettings;
 use Illuminate\Support\Carbon;
 
 /*
@@ -105,9 +107,13 @@ it('leaves the nights it has already fed alone when it re-plans', function () {
     // The window is over, and somebody re-plans it with another seed — a
     // --shopping-date away.
     Carbon::setTestNow(Carbon::parse('2026-01-18 08:00:00', 'America/Toronto'));
-    $after = $planner->planWindow($window, seed: 99, replan: true)->nights->pluck('recipe_id', 'date')->all();
+    $nights = $planner->planWindow($window, seed: 99, replan: true)->nights;
 
-    expect($after)->toBe($before);
+    expect($nights->pluck('recipe_id', 'date')->all())->toBe($before)
+        // Not just the dinner: the whole row is the record of that night.
+        ->and($nights->pluck('pick_note')->filter())->toBeEmpty()
+        ->and($nights->every(fn (PlanNight $night) => $night->selection === NightSelection::Recipe))
+        ->toBeTrue();
 });
 
 it('writes one history row per dinner, however often the window is re-planned', function () {
@@ -178,4 +184,69 @@ it('reads the instant it is given as the night the household is living in', func
 
     expect($recorded)->toBe(1)
         ->and(MealHistoryEntry::sole()->cooked_on->toDateString())->toBe('2026-01-12');
+});
+
+it('invents no night for a date that has already gone by', function () {
+    // currentWindow() is the documented way to ask "the window tonight's dinner
+    // belongs to", and it begins in the past. Planning it must not mint a second
+    // row for a night another plan is already the record of: MM-9's reminder and
+    // MM-14's dashboard read plan_nights.date and expect one answer.
+    Recipe::factory()->count(8)->create(['effort_tier' => EffortTier::Workhorse30]);
+    $planner = new MealPlanner;
+    // Wednesday's shop, covering Thu 8 to Sun 11.
+    Carbon::setTestNow(Carbon::parse('2026-01-07 09:00:00', 'America/Toronto'));
+    $planner->planWindow($planner->windowFor(aDate('2026-01-07')));
+
+    // Saturday: that is still the window in force, and two of its nights have
+    // gone by. The household moves shopping to Thursday and Sunday.
+    Carbon::setTestNow(Carbon::parse('2026-01-10 09:00:00', 'America/Toronto'));
+    HouseholdSettings::set(HouseholdSettings::KEY_SHOPPING_TIMES, [
+        ['weekday' => Weekday::Thursday->value, 'time' => '17:30'],
+        ['weekday' => Weekday::Sunday->value, 'time' => '10:00'],
+    ]);
+
+    $planner->planWindow($planner->currentWindow());
+
+    $dates = PlanNight::query()->orderBy('date')->pluck('date')->map->toDateString();
+
+    expect($dates->unique()->count())->toBe($dates->count())
+        ->and($dates->all())->toBe(['2026-01-08', '2026-01-09', '2026-01-10', '2026-01-11']);
+});
+
+it('leaves who cooked a past night as it was recorded', function () {
+    // The plan is the record of what happened on a night that has gone by.
+    // Rewriting its cook from the week as it is now is falsifying that record —
+    // and the night's dinner was chosen for the cook it had.
+    Recipe::factory()->count(8)->create(['effort_tier' => EffortTier::Workhorse30]);
+    $planner = new MealPlanner;
+    $window = $planner->windowFor(aDate('2026-01-11'));
+    $planner->planWindow($window, seed: 1);
+
+    Carbon::setTestNow(Carbon::parse('2026-01-18 08:00:00', 'America/Toronto'));
+    theWeekIs([], CookAssignment::Me, EffortTier::Project60);
+    $nights = $planner->planWindow($window, seed: 99, replan: true)->nights;
+
+    expect($nights->every(fn (PlanNight $night) => $night->cook === CookAssignment::Together))->toBeTrue()
+        ->and($nights->every(fn (PlanNight $night) => $night->time_budget === EffortTier::Workhorse30))
+        ->toBeTrue();
+});
+
+it('keeps a past night the window no longer covers', function () {
+    // Wednesday happened and was cooked. A shorter window does not un-happen it,
+    // and the plan is the only record that it did.
+    Recipe::factory()->count(8)->create(['effort_tier' => EffortTier::Chaos15]);
+    $planner = new MealPlanner;
+    $planner->planWindow(seed: 1);
+
+    Carbon::setTestNow(Carbon::parse('2026-01-16 08:00:00', 'America/Toronto'));
+    HouseholdSettings::set(HouseholdSettings::KEY_SHOPPING_TIMES, [
+        ['weekday' => Weekday::Sunday->value, 'time' => '10:00'],
+        ['weekday' => Weekday::Tuesday->value, 'time' => '17:30'],
+    ]);
+
+    // Sunday's window is now Mon 12 to Tue 13, so Wednesday falls outside it.
+    $planner->planWindow($planner->windowFor(aDate('2026-01-11')));
+
+    expect(PlanNight::query()->orderBy('date')->pluck('date')->map->toDateString()->all())
+        ->toBe(['2026-01-12', '2026-01-13', '2026-01-14']);
 });

@@ -8,6 +8,8 @@ use App\Models\CookScheduleNight;
 use App\Planning\CalendarDate;
 use App\Planning\FreezerOption;
 use App\Planning\NightBrief;
+use App\Planning\NothingFitsReason;
+use App\Planning\Pick;
 use App\Planning\PlanningRules;
 use App\Planning\RecipeOption;
 use App\Planning\ShoppingCalendar;
@@ -96,6 +98,41 @@ function aNight(
         timeBudget: $timeBudget,
         overridesSchedule: $overridesSchedule,
         note: $note,
+    );
+}
+
+/**
+ * Everything a pick has to say, rendered with the enums' own labels.
+ *
+ * A unit test has no Settings to read the household's cook names out of, which is
+ * exactly the point: Pick::explain() asks its caller what to call the cook, so
+ * here the caller answers with the enum. Anything a person reads passes
+ * HouseholdSettings::cookLabel(...) instead.
+ */
+function theReasonFor(Pick $pick): ?string
+{
+    return $pick->explain(fn (CookAssignment $cook) => $cook->label());
+}
+
+/**
+ * A "nothing fits" reason, for the tests that only care that there is one.
+ */
+function aNothingFitsReason(
+    CookAssignment $cook = CookAssignment::Together,
+    EffortTier $timeAvailable = EffortTier::Workhorse30,
+): NothingFitsReason {
+    return new NothingFitsReason(
+        cook: $cook,
+        timeAvailable: $timeAvailable,
+        cappedFrom: null,
+        recipesInVault: 0,
+        ruledOutByCook: 0,
+        ruledOutByTime: 0,
+        recipesTaken: 0,
+        freezerInStash: 0,
+        freezerAllowed: false,
+        freezerEmpty: 0,
+        freezerTaken: 0,
     );
 }
 

@@ -2,8 +2,10 @@
 
 namespace App\Planning;
 
+use App\Enums\CookAssignment;
 use App\Enums\NightSelection;
 use App\Models\PlanNight;
+use Closure;
 
 /**
  * What the picker decided for one night.
@@ -21,9 +23,16 @@ final class Pick
         public readonly ?int $freezerItemId = null,
         public readonly ?string $mealName = null,
         /**
-         * The picker's own note: today, the reason nothing fitted.
+         * The planner's own words about this night, when it has any: "Kept Chili:
+         * nothing else fits." Free text, with no cook's name in it.
          */
         public readonly ?string $note = null,
+        /**
+         * Why nothing fitted, as facts. Rendered on the way out rather than
+         * written down as a sentence, because the sentence names the cook and the
+         * household can rename a cook at any time (MM-4).
+         */
+        public readonly ?NothingFitsReason $reason = null,
     ) {}
 
     public static function recipe(NightBrief $night, RecipeOption $option): self
@@ -63,12 +72,29 @@ final class Pick
      * The rules ruled everything out. The reason travels with it, and the rest of
      * the plan still goes ahead.
      */
-    public static function nothingFits(NightBrief $night, string $reason): self
+    public static function nothingFits(NightBrief $night, NothingFitsReason $reason): self
     {
         return new self(
             night: $night,
             selection: NightSelection::NothingFits,
-            note: $reason,
+            reason: $reason,
+        );
+    }
+
+    /**
+     * The same pick with something the planner wants to say about it, keeping the
+     * picker's reason underneath.
+     */
+    public function noted(string $note): self
+    {
+        return new self(
+            night: $this->night,
+            selection: $this->selection,
+            recipeId: $this->recipeId,
+            freezerItemId: $this->freezerItemId,
+            mealName: $this->mealName,
+            note: $note,
+            reason: $this->reason,
         );
     }
 
@@ -101,7 +127,26 @@ final class Pick
             freezerItemId: $night->freezer_item_id,
             mealName: $night->recipe?->name ?? $night->freezerItem?->name,
             note: $night->pick_note,
+            reason: NothingFitsReason::fromArray($night->pick_reason),
         );
+    }
+
+    /**
+     * Everything there is to say about this night, in the household's words.
+     *
+     * The one thing a page, a Slack post or the command should print: the
+     * planner's note and the picker's reason, with the cook called whatever the
+     * household calls them. The labeller is an argument rather than a default
+     * because getting it wrong is invisible — the enum's own label happens to read
+     * fine ("Partner") right up until somebody types their name in Settings.
+     *
+     * @param  Closure(CookAssignment): string  $cookLabel  pass HouseholdSettings::cookLabel(...)
+     */
+    public function explain(Closure $cookLabel): ?string
+    {
+        $parts = array_filter([$this->note, $this->reason?->render($cookLabel)]);
+
+        return $parts === [] ? null : implode(' ', $parts);
     }
 
     public function hasMeal(): bool

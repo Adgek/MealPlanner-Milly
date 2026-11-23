@@ -210,11 +210,13 @@ final class MealPlanner
             );
 
             if ($pick->selection === NightSelection::NothingFits && $previousMeal !== null) {
-                $this->restore($night, $previous, sprintf(
-                    'Kept %s: nothing else fits. %s',
+                // The picker's reason travels with the note rather than being
+                // written into it: the note is the planner's own words, and the
+                // reason still has to be rendered with the household's names.
+                $this->restore($night, $previous, $pick->noted(sprintf(
+                    'Kept %s: nothing else fits.',
                     $previousMeal,
-                    (string) $pick->note,
-                ));
+                )));
             }
 
             return $night;
@@ -692,6 +694,7 @@ final class MealPlanner
         $night->recipe_id = $pick->recipeId;
         $night->freezer_item_id = $pick->freezerItemId;
         $night->pick_note = $pick->note;
+        $night->pick_reason = $pick->reason?->toArray();
         $this->saveNight($night);
     }
 
@@ -711,6 +714,7 @@ final class MealPlanner
         $night->recipe_id = null;
         $night->freezer_item_id = null;
         $night->pick_note = null;
+        $night->pick_reason = null;
         $this->saveNight($night);
     }
 
@@ -733,7 +737,7 @@ final class MealPlanner
      *
      * @param  array{selection: NightSelection|null, recipe_id: int|null, freezer_item_id: int|null}  $previous
      */
-    private function restore(PlanNight $night, array $previous, string $note): void
+    private function restore(PlanNight $night, array $previous, Pick $pick): void
     {
         if ($previous['selection'] === NightSelection::FreezerItem && $previous['freezer_item_id'] !== null) {
             $this->reservePortionFor($night, $previous['freezer_item_id']);
@@ -742,7 +746,8 @@ final class MealPlanner
         $night->selection = $previous['selection'];
         $night->recipe_id = $previous['recipe_id'];
         $night->freezer_item_id = $previous['freezer_item_id'];
-        $night->pick_note = $note;
+        $night->pick_note = $pick->note;
+        $night->pick_reason = $pick->reason?->toArray();
         $this->saveNight($night);
     }
 

@@ -237,10 +237,24 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   no `deleting` event on `PlanNight` can ever fire.
 
 - **"Nothing fits" is a stored outcome, not a failure.** `NightSelection` gained a
-  `NothingFits` case and `plan_nights` gained a `pick_note` column carrying the
-  picker's reason in the household's words ("not tagged for Partner", "nothing short
-  enough"). The rest of the plan still goes ahead, and the reason is what MM-8 and
-  MM-9 show. Nobody nights are not a failure either: they get no recipe on purpose.
+  `NothingFits` case, and the rest of the plan still goes ahead. Nobody nights are
+  not a failure either: they get no recipe on purpose.
+
+  **The reason is stored as counts and worded on the way out.**
+  `plan_nights.pick_reason` holds what the picker rejected and why
+  (`App\Planning\NothingFitsReason`); `Pick::explain($cookLabel)` turns it into a
+  sentence. It has to work that way round, because wording the reason means naming
+  the cook, and the household's name for a cook is a setting they can change
+  (MM-4) — a sentence written at pick time would still read "Partner" after she
+  had been renamed, in a row nothing could repair. Keeping the cook as an enum
+  also keeps `NightPicker` out of the database, which is what lets every rule be
+  unit-tested.
+
+  So **anything showing a reason to a person passes `HouseholdSettings::cookLabel(...)`**
+  to `Pick::explain()` — MM-8's plan page, MM-9's post, `milly:plan`.
+  `plan_nights.pick_note` is the planner's own words about the night ("Kept Chili:
+  nothing else fits."), has no cook's name in it, and `explain()` returns it with
+  the reason.
 
 - **A re-plan keeps locked nights.** `planWindow(..., replan: true)` rolls every
   night that isn't locked and leaves the locked ones exactly as they are, which is

@@ -99,12 +99,22 @@ class PlanWindowCommand extends Command
         ];
     }
 
+    /**
+     * The note column: the household's one-off reason for the date, and whatever
+     * the planner and the picker have to say about the night.
+     *
+     * The picker's reason is rendered here rather than stored, with the
+     * household's own name for the cook: the enum's label reads fine ("Partner")
+     * right up until somebody types their name in Settings (MM-4).
+     */
     private function note(Pick $pick): string
     {
+        $explanation = $pick->explain(HouseholdSettings::cookLabel(...));
+
         return match (true) {
-            $pick->selection === NightSelection::NothingFits => (string) $pick->note,
+            $pick->selection === NightSelection::NothingFits => (string) $explanation,
             $pick->night->overridesSchedule => '* '.($pick->night->note ?? 'one-off change for this date'),
-            default => (string) $pick->note,
+            default => (string) $explanation,
         };
     }
 

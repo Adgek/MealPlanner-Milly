@@ -188,11 +188,13 @@ final class NightPicker
     }
 
     /**
-     * Why nothing fitted, in a sentence the household can act on.
+     * Why nothing fitted: the counts, not a sentence.
      *
-     * "Nothing fits" on its own is useless: the answer is either "add a quick
-     * recipe she likes", "cook together that night" or "restock the freezer", and
-     * which one depends on what ruled everything out.
+     * The reason names the cook, and what the household calls the two cooks is a
+     * setting (MM-4). Rendering it here would mean reading the database from the
+     * one class that must not, and storing the result would bake a name into a row
+     * that a later rename could never repair. So the picker counts, and whatever
+     * shows a person the reason renders it (NothingFitsReason::render()).
      */
     private function nothingFitsReason(
         NightBrief $brief,
@@ -205,69 +207,23 @@ final class NightPicker
         bool $freezerAllowed,
         int $freezerEmpty,
         int $freezerTaken,
-    ): string {
-        $parts = [];
-
-        if ($recipesInVault === 0) {
-            $parts[] = 'the recipe vault is empty';
-        } else {
-            if ($ruledOutByCook > 0) {
-                $parts[] = sprintf(
-                    '%d of %d recipes are not tagged for %s',
-                    $ruledOutByCook,
-                    $recipesInVault,
-                    $brief->cook->label(),
-                );
-            }
-
-            if ($ruledOutByTime > 0) {
-                $parts[] = sprintf(
-                    '%d need more than %d min',
-                    $ruledOutByTime,
-                    $timeAvailable->minutes(),
-                );
-            }
-
-            if ($recipesTaken > 0) {
-                $parts[] = sprintf('%d are already spoken for this window', $recipesTaken);
-            }
-        }
-
-        // An empty stash first: when there is nothing in the freezer, that is the
-        // more useful fact than which nights the freezer is saved for.
-        $parts[] = match (true) {
-            $freezerInStash === 0 => 'the freezer stash is empty',
-            ! $freezerAllowed => sprintf(
-                'freezer meals are kept for %s nights',
-                EffortTier::Chaos15->label(),
-            ),
-            $freezerTaken > 0 && $freezerEmpty === 0 => 'the freezer meals left are already spoken for this window',
-            default => 'no freezer meal has a portion left',
-        };
-
-        return sprintf(
-            'Nothing fits a %s night with %s cooking%s: %s.',
-            $timeAvailable->label(),
-            $brief->cook->label(),
-            $this->capNote($brief, $timeAvailable),
-            implode('; ', $parts),
-        );
-    }
-
-    /**
-     * Say so when the night is shorter than the schedule because of the solo rule,
-     * so "needs more than 15 min" doesn't look like a mistake on a 60-minute night.
-     */
-    private function capNote(NightBrief $brief, EffortTier $timeAvailable): string
-    {
-        if (! $brief->isPartnerSolo() || $timeAvailable === $brief->timeBudget) {
-            return '';
-        }
-
-        return sprintf(
-            ' (a solo night is capped at %s, from %s)',
-            $timeAvailable->label(),
-            $brief->timeBudget->label(),
+    ): NothingFitsReason {
+        return new NothingFitsReason(
+            cook: $brief->cook,
+            timeAvailable: $timeAvailable,
+            // Only when the solo rule actually narrowed the night, so "needs more
+            // than 15 min" doesn't look like a mistake on a 60-minute Saturday.
+            cappedFrom: $brief->isPartnerSolo() && $timeAvailable !== $brief->timeBudget
+                ? $brief->timeBudget
+                : null,
+            recipesInVault: $recipesInVault,
+            ruledOutByCook: $ruledOutByCook,
+            ruledOutByTime: $ruledOutByTime,
+            recipesTaken: $recipesTaken,
+            freezerInStash: $freezerInStash,
+            freezerAllowed: $freezerAllowed,
+            freezerEmpty: $freezerEmpty,
+            freezerTaken: $freezerTaken,
         );
     }
 }

@@ -194,13 +194,19 @@ it('marks a night nothing fits, with the reason, and plans the rest', function (
         'effort_tier' => EffortTier::Workhorse30,
     ]);
 
-    $nights = (new MealPlanner)->planWindow()->nights;
+    $planner = new MealPlanner;
+    $plan = $planner->planWindow();
+    $nights = $plan->nights;
+    $reason = $planner->picksFor($plan)[1]->explain(HouseholdSettings::cookLabel(...));
 
     expect($nights[1]->selection)->toBe(NightSelection::NothingFits)
         ->and($nights[1]->nothingFits())->toBeTrue()
         ->and($nights[1]->hasMeal())->toBeFalse()
-        ->and($nights[1]->pick_note)->toContain('not tagged for Partner')
-        ->and($nights[1]->pick_note)->toContain('a solo night is capped at 15-min chaos')
+        // The reason is stored as counts and read back in the household's words,
+        // so renaming a cook renames them in a reason written months ago (MM-4).
+        ->and($nights[1]->pick_reason['ruled_out_by_cook'])->toBe(3)
+        ->and($reason)->toContain('not tagged for Partner')
+        ->and($reason)->toContain('a solo night is capped at 15-min chaos')
         // The other two nights are fine.
         ->and($nights[0]->hasMeal())->toBeTrue()
         ->and($nights[2]->hasMeal())->toBeTrue();
@@ -244,11 +250,13 @@ it('never plans a freezer meal that has no portions left', function () {
     theWeekIs([], CookAssignment::Partner, EffortTier::Chaos15);
     FreezerItem::factory()->empty()->create();
 
-    $nights = (new MealPlanner)->planWindow()->nights;
+    $planner = new MealPlanner;
+    $plan = $planner->planWindow();
 
-    expect($nights->every(fn (PlanNight $night) => $night->nothingFits()))->toBeTrue()
+    expect($plan->nights->every(fn (PlanNight $night) => $night->nothingFits()))->toBeTrue()
         // A box with nothing in it is an empty stash, as far as a plan is concerned.
-        ->and($nights[0]->pick_note)->toContain('the freezer stash is empty');
+        ->and($planner->picksFor($plan)[0]->explain(HouseholdSettings::cookLabel(...)))
+        ->toContain('the freezer stash is empty');
 });
 
 it('rolls one night again without touching the others', function () {

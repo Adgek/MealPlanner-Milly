@@ -76,7 +76,7 @@ it('marks a night nothing fits and plans the rest anyway', function () {
 
     expect($picks[0]->mealName)->toBe('Quick pasta')
         ->and($picks[1]->selection)->toBe(NightSelection::NothingFits)
-        ->and($picks[1]->note)->toContain('already spoken for this window')
+        ->and(theReasonFor($picks[1]))->toContain('already spoken for this window')
         ->and($picks[2]->mealName)->toBe('Chili');
 });
 

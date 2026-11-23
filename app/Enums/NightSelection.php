@@ -12,7 +12,11 @@ namespace App\Enums;
  *   Recipe      -> recipe_id
  *   FreezerItem -> freezer_item_id
  *   NightOff    -> neither
- *   NothingFits -> neither, and pick_note says why
+ *   NothingFits -> neither, and pick_reason says why
+ *
+ * The reason is stored as counts (App\Planning\NothingFitsReason) and worded on
+ * the way out, because wording it means naming the cook and the household can
+ * rename a cook at any time (MM-4).
  *
  * NothingFits is a decision, not an absence: the picker looked, and the rules
  * ruled everything out. It is kept apart from null so a page can tell "not

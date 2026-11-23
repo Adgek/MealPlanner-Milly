@@ -225,3 +225,40 @@ it('fails with a readable message on a date it cannot read', function () {
 
     expect($status)->toBe(1);
 });
+
+it('gives the reason nothing fits in the household’s own words', function () {
+    // MM-4's rule reaches the reason too, not just the Cook column: the stored
+    // reason must not bake "Partner" in, because a rename could never repair it.
+    HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
+    theWeekIs([Weekday::Monday->value => [CookAssignment::Me, EffortTier::Project60]], CookAssignment::Partner);
+    Recipe::factory()->create([
+        'name' => 'Chili',
+        'cookable_by' => CookableBy::Me,
+        'effort_tier' => EffortTier::Project60,
+    ]);
+
+    [, $output] = plannedWith();
+
+    expect($output)->toContain('not tagged for Milly')
+        ->and($output)->toContain('with Milly cooking')
+        ->and($output)->not->toContain('Partner');
+});
+
+it('renames the cook in a reason that was already saved', function () {
+    // The reason was stored under the placeholder names. Renaming the cooks has
+    // to rename them in the rows that are already on the plan.
+    theWeekIs([Weekday::Monday->value => [CookAssignment::Me, EffortTier::Project60]], CookAssignment::Partner);
+    Recipe::factory()->create([
+        'name' => 'Chili',
+        'cookable_by' => CookableBy::Me,
+        'effort_tier' => EffortTier::Project60,
+    ]);
+    plannedWith();
+
+    HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
+
+    [, $output] = plannedWith();
+
+    expect($output)->toContain('not tagged for Milly')
+        ->and($output)->not->toContain('Partner');
+});

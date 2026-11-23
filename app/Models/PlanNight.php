@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property bool $overrides_schedule
  * @property string|null $override_note
  * @property string|null $pick_note
+ * @property array<string, mixed>|null $pick_reason
  * @property NightSelection|null $selection
  * @property bool $holds_freezer_portion
  * @property bool $is_locked
@@ -39,6 +40,7 @@ class PlanNight extends Model
         'overrides_schedule',
         'override_note',
         'pick_note',
+        'pick_reason',
         'selection',
         'recipe_id',
         'freezer_item_id',
@@ -53,6 +55,10 @@ class PlanNight extends Model
             'cook' => CookAssignment::class,
             'time_budget' => EffortTier::class,
             'selection' => NightSelection::class,
+            // The counts behind "nothing fits", read back through
+            // App\Planning\NothingFitsReason. Stored rather than rendered so a
+            // cook's new name reaches rows written months ago (MM-4).
+            'pick_reason' => 'array',
             'overrides_schedule' => 'boolean',
             'holds_freezer_portion' => 'boolean',
             'is_locked' => 'boolean',

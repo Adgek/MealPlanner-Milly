@@ -7,6 +7,7 @@ use App\Enums\NightSelection;
 use App\Planning\MealPool;
 use App\Planning\NightBrief;
 use App\Planning\NightPicker;
+use App\Planning\NothingFitsReason;
 use App\Planning\Pick;
 use App\Planning\PlanningRules;
 use App\Planning\SeededRandom;
@@ -213,7 +214,7 @@ it('will not plan a freezer meal with no portions left', function () {
     );
 
     expect($pick->selection)->toBe(NightSelection::NothingFits)
-        ->and($pick->note)->toContain('no freezer meal has a portion left');
+        ->and(theReasonFor($pick))->toContain('no freezer meal has a portion left');
 });
 
 it('keeps the freezer stash for chaos nights', function () {
@@ -351,12 +352,58 @@ it('says nothing fits, and why, when the rules rule everything out', function ()
 
     expect($pick->selection)->toBe(NightSelection::NothingFits)
         ->and($pick->hasMeal())->toBeFalse()
-        ->and($pick->note)->toBe(
+        ->and(theReasonFor($pick))->toBe(
             'Nothing fits a 15-min chaos night with Partner cooking '
             .'(a solo night is capped at 15-min chaos, from 60-min+ project): '
             .'2 of 4 recipes are not tagged for Partner; 2 need more than 15 min; '
             .'no freezer meal has a portion left.'
         );
+});
+
+it('leaves the cook’s name to whatever is showing the reason', function () {
+    // The reason is counts, not a sentence, and the picker never says what the
+    // cook is called: the household's own names are a setting it must not read
+    // (MM-4), and the reason is stored, so a name written in here could never be
+    // repaired by a later rename.
+    $pick = (new NightPicker(theRules()))->pick(
+        aNight('2026-01-13', CookAssignment::Partner, EffortTier::Chaos15),
+        new MealPool([aRecipe(1, CookableBy::Me, EffortTier::Chaos15)]),
+        new SeededRandom(1),
+    );
+
+    expect($pick->reason)->not->toBeNull()
+        ->and($pick->reason->cook)->toBe(CookAssignment::Partner)
+        ->and($pick->reason->ruledOutByCook)->toBe(1)
+        // Whatever the household calls her is what the reason reads.
+        ->and($pick->explain(fn (CookAssignment $cook) => 'Milly'))
+        ->toBe(
+            'Nothing fits a 15-min chaos night with Milly cooking: '
+            .'1 of 1 recipes are not tagged for Milly; the freezer stash is empty.'
+        );
+});
+
+it('survives a stored reason it cannot read', function () {
+    // A row written before the reason was stored, or by a version that spelled a
+    // value differently. A night that cannot explain itself is better than a plan
+    // page that cannot load.
+    expect(NothingFitsReason::fromArray(null))->toBeNull()
+        ->and(NothingFitsReason::fromArray([]))->toBeNull()
+        ->and(NothingFitsReason::fromArray(['cook' => 'partner', 'time_available' => 'teatime']))->toBeNull()
+        ->and(NothingFitsReason::fromArray(['cook' => 'partner', 'time_available' => '15_min_chaos']))
+        ->not->toBeNull();
+});
+
+it('reads a stored reason back as the reason it was', function () {
+    $pick = (new NightPicker(theRules()))->pick(
+        aNight('2026-01-13', CookAssignment::Partner, EffortTier::Project60),
+        new MealPool([aRecipe(1, CookableBy::Me, EffortTier::Workhorse30)], [aFreezerMeal(1, 0)]),
+        new SeededRandom(1),
+    );
+
+    $readBack = NothingFitsReason::fromArray($pick->reason->toArray());
+
+    expect($readBack->render(fn (CookAssignment $cook) => $cook->label()))
+        ->toBe($pick->reason->render(fn (CookAssignment $cook) => $cook->label()));
 });
 
 it('says when the freezer is being kept for chaos nights', function () {
@@ -366,7 +413,7 @@ it('says when the freezer is being kept for chaos nights', function () {
         new SeededRandom(1),
     );
 
-    expect($pick->note)->toBe(
+    expect(theReasonFor($pick))->toBe(
         'Nothing fits a 30-min workhorse night with Me cooking: '
         .'1 of 1 recipes are not tagged for Me; freezer meals are kept for 15-min chaos nights.'
     );
@@ -379,7 +426,7 @@ it('says when the vault is empty', function () {
         new SeededRandom(1),
     );
 
-    expect($pick->note)->toBe(
+    expect(theReasonFor($pick))->toBe(
         'Nothing fits a 30-min workhorse night with Together cooking: '
         .'the recipe vault is empty; the freezer stash is empty.'
     );
@@ -396,8 +443,8 @@ it('says when the window has already used everything that fits', function () {
         new SeededRandom(1),
     );
 
-    expect($pick->note)->toContain('1 are already spoken for this window')
-        ->and($pick->note)->toContain('the freezer meals left are already spoken for this window');
+    expect(theReasonFor($pick))->toContain('1 are already spoken for this window')
+        ->and(theReasonFor($pick))->toContain('the freezer meals left are already spoken for this window');
 });
 
 it('can be told to avoid a particular meal, which is how a re-roll works', function () {
@@ -440,5 +487,5 @@ it('describes a pick the way a plan reads it', function () {
         ->and($freezer->describe())->toBe('Frozen minestrone (from the freezer)')
         ->and($freezer->mealKey())->toBe('freezer:1')
         ->and(Pick::unplanned(aNight('2026-01-12'))->describe())->toBe('Not planned yet')
-        ->and(Pick::nothingFits(aNight('2026-01-12'), 'because')->describe())->toBe('Nothing fits');
+        ->and(Pick::nothingFits(aNight('2026-01-12'), aNothingFitsReason())->describe())->toBe('Nothing fits');
 });

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\CookAssignment;
 use App\Enums\EffortTier;
 use App\Enums\Weekday;
 use App\Models\Setting;
@@ -62,6 +63,7 @@ it('offers a typed default for every starting setting', function () {
     // The rows under "Starting settings" in docs/decisions.md. The last three are
     // the picker's own household values, added by MM-6.
     expect(array_keys(HouseholdSettings::defaults()))->toBe([
+        'cook_names',
         'time_zone',
         'shopping_times',
         'prep_block',
@@ -79,6 +81,7 @@ it('offers a typed default for every starting setting', function () {
 it('reads the starting settings without any rows in the table', function () {
     // A half-seeded database still has to behave.
     expect(Setting::count())->toBe(0)
+        ->and(HouseholdSettings::cookNames())->toBe(['me' => 'Me', 'partner' => 'Partner'])
         ->and(HouseholdSettings::timeZone())->toBe('America/Toronto')
         ->and(HouseholdSettings::dinnerTime())->toBe('18:00')
         ->and(HouseholdSettings::planPostTime())->toBe('19:00')
@@ -119,6 +122,23 @@ it('lets the household change a shopping day', function () {
 
     expect($windows)->toHaveCount(1)
         ->and($windows[0]['weekday'])->toBe(Weekday::Saturday);
+});
+
+it('calls the cooks by the household’s own names', function () {
+    HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
+
+    expect(HouseholdSettings::cookLabel(CookAssignment::Me))->toBe('Adrian')
+        ->and(HouseholdSettings::cookLabel(CookAssignment::Partner))->toBe('Milly')
+        // "Together" and "nobody" are not people, so they keep the enum's label.
+        ->and(HouseholdSettings::cookLabel(CookAssignment::Together))->toBe('Together')
+        ->and(HouseholdSettings::cookLabel(CookAssignment::Nobody))->toBe('Nobody');
+});
+
+it('falls back to the placeholder when a cook has no name', function () {
+    HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => '  ', 'partner' => 'Milly']);
+
+    expect(HouseholdSettings::cookLabel(CookAssignment::Me))->toBe('Me')
+        ->and(HouseholdSettings::cookLabel(CookAssignment::Partner))->toBe('Milly');
 });
 
 it('turns a stored time into an instant in the household time zone', function () {

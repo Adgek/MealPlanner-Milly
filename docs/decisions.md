@@ -125,6 +125,45 @@ through Eloquent models in `app/Models`, and every entity has a factory.
   `ExampleDataSeeder` holds the sample recipes from `AppPlan.md`; it is for
   development, and is not the household's data (MM-5 loads that).
 
+### What MM-4 added (the Settings page)
+
+Every value above is now editable at `/settings`, as one Livewire form
+(`app/Livewire/Settings.php`). Other tickets keep reading through
+`HouseholdSettings` and `CookScheduleNight` and need no awareness of the page.
+
+- **The two cooks have names.** `cook_names` is a new setting: one structure keyed
+  by `CookAssignment` value, starting as the placeholders "Me" and "Partner".
+  Anything that shows a cook to a person goes through
+  `HouseholdSettings::cookLabel()`, which returns the household's name for `me` and
+  `partner` and the enum's own label for `together` and `nobody`, because those two
+  are not people. Renaming a cook in Settings therefore renames them on the plan
+  (MM-8), in the Slack posts (MM-9) and on the dashboard (MM-14).
+
+- **The page writes both stores in one transaction** — the `settings` rows and the
+  seven `cook_schedule_nights` rows — so a half-applied week is not a state the
+  household can land in. A save that fails validation writes nothing at all.
+
+- **Times are normalised to `"HH:MM"` before they are stored** (`App\Settings\TimeOfDay`).
+  A typed "9:00" or a browser's "17:30:00" would each be read differently by
+  `HouseholdSettings::at()` and by the scheduler, so there is one stored shape and
+  one place that enforces it.
+
+- **The prep block stays a single weekly block,** as MM-3 shaped it: one weekday
+  plus a start and an end, validated to end after it starts. A household that wants
+  two prep blocks in a week needs the setting to become a list, like
+  `shopping_times` — a data-shape change other tickets read, so it belongs in its
+  own ticket rather than in the page.
+
+- **What validation refuses:** no shopping day at all (every plan window is derived
+  from a shop), the same shopping day listed twice, a time that is not a time, a
+  prep block that ends before it starts, a time zone PHP does not know, an unnamed
+  cook, and a raw-split fridge life outside 1–14 days. A low-stash warning of `0`
+  is allowed, and means "never warn".
+
+- **Changing a setting only affects the next plan.** A plan copies its cook and its
+  time budget when it is made (above), so this needed no new mechanism — but it is
+  the promise the page makes in writing, and `SettingsPageTest` pins it down.
+
 ### Open, not blocking
 
 - **Reaching the app away from home.** Not decided. Today the answer is "you can't". If the household wants the plan page or Slack links to work on mobile data, the options are something like Tailscale (and then a login, because the app would be reachable from more places) or leaving it home-only. MM-10 can raise this again.
@@ -149,6 +188,7 @@ through Eloquent models in `app/Models`, and every entity has a factory.
 
 | Setting | Default |
 |---|---|
+| Cook names | "Me" and "Partner" (placeholders until the household types its own) |
 | Time zone | America/Toronto |
 | Shopping | Sunday 10:00 am, Wednesday 5:30 pm |
 | Prep block | Monday 8:00–9:00 pm |

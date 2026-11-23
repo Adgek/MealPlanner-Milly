@@ -2,8 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Enums\CookAssignment;
-use App\Enums\EffortTier;
 use App\Enums\Weekday;
 use App\Models\CookScheduleNight;
 use App\Models\Setting;
@@ -43,8 +41,8 @@ class HouseholdDefaultsSeeder extends Seeder
             CookScheduleNight::query()->firstOrCreate(
                 ['weekday' => $weekday->value],
                 [
-                    'cook' => CookAssignment::Together,
-                    'time_budget' => EffortTier::Workhorse30,
+                    'cook' => CookScheduleNight::DEFAULT_COOK,
+                    'time_budget' => CookScheduleNight::DEFAULT_TIME_BUDGET,
                 ],
             );
         }

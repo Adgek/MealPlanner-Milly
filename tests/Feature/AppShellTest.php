@@ -71,5 +71,5 @@ it('re-renders the plan page without a page reload', function () {
 it('mounts the settings page as a livewire component', function () {
     Livewire::test(Settings::class)
         ->assertOk()
-        ->assertSee('No settings to change yet');
+        ->assertSee('Save settings');
 });

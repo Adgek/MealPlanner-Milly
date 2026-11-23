@@ -2,6 +2,7 @@
 
 namespace App\Settings;
 
+use App\Enums\CookAssignment;
 use App\Enums\EffortTier;
 use App\Enums\Weekday;
 use App\Models\Setting;
@@ -23,6 +24,8 @@ use Illuminate\Support\Carbon;
  */
 class HouseholdSettings
 {
+    public const KEY_COOK_NAMES = 'cook_names';
+
     public const KEY_TIME_ZONE = 'time_zone';
 
     public const KEY_SHOPPING_TIMES = 'shopping_times';
@@ -56,6 +59,15 @@ class HouseholdSettings
     public static function defaults(): array
     {
         return [
+            // What the two cooks are called, keyed by the CookAssignment they
+            // answer to. Placeholders until the household puts its own names in
+            // (MM-4), because "Partner is cooking" reads fine and a wrong name
+            // does not.
+            self::KEY_COOK_NAMES => [
+                CookAssignment::Me->value => 'Me',
+                CookAssignment::Partner->value => 'Partner',
+            ],
+
             self::KEY_TIME_ZONE => 'America/Toronto',
 
             // Sunday 10:00 am and Wednesday 5:30 pm. A shopping day covers every
@@ -123,6 +135,37 @@ class HouseholdSettings
     public static function timeZone(): string
     {
         return (string) self::get(self::KEY_TIME_ZONE);
+    }
+
+    /**
+     * The two cooks' names, keyed by CookAssignment value.
+     *
+     * @return array{me: string, partner: string}
+     */
+    public static function cookNames(): array
+    {
+        $names = (array) self::get(self::KEY_COOK_NAMES);
+        $defaults = self::defaults()[self::KEY_COOK_NAMES];
+
+        return [
+            CookAssignment::Me->value => trim((string) ($names[CookAssignment::Me->value] ?? '')) ?:
+                $defaults[CookAssignment::Me->value],
+            CookAssignment::Partner->value => trim((string) ($names[CookAssignment::Partner->value] ?? '')) ?:
+                $defaults[CookAssignment::Partner->value],
+        ];
+    }
+
+    /**
+     * What to call a night's cook on a page or in a Slack post: the household's
+     * own name for the two people, and the enum's label for "together" and
+     * "nobody", which are not people.
+     *
+     * Every reader that shows a cook to a human goes through here, so renaming a
+     * cook in Settings renames them everywhere.
+     */
+    public static function cookLabel(CookAssignment $cook): string
+    {
+        return self::cookNames()[$cook->value] ?? $cook->label();
     }
 
     /**

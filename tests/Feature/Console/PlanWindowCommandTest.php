@@ -245,22 +245,32 @@ it('gives the reason nothing fits in the household’s own words', function () {
 });
 
 it('renames the cook in a reason that was already saved', function () {
-    // The reason was stored under the placeholder names. Renaming the cooks has
-    // to rename them in the rows that are already on the plan.
-    theWeekIs([Weekday::Monday->value => [CookAssignment::Me, EffortTier::Project60]], CookAssignment::Partner);
+    // The reason was stored under the placeholder names, and renaming the cooks
+    // has to rename them in the rows already on the plan. The night is locked on
+    // purpose: a dead end the household has not locked is picked again on the next
+    // run (and gets a fresh reason), so a locked one is the only way to be sure
+    // the words came off the stored row rather than out of a new pick.
+    theWeekIs([], CookAssignment::Partner, EffortTier::Chaos15);
     Recipe::factory()->create([
         'name' => 'Chili',
         'cookable_by' => CookableBy::Me,
-        'effort_tier' => EffortTier::Project60,
+        'effort_tier' => EffortTier::Chaos15,
     ]);
-    plannedWith();
+    $planner = new MealPlanner;
+    $locked = $planner->lockNight($planner->planWindow()->nights[0]);
+    $stored = $locked->refresh()->pick_reason;
+
+    expect($locked->nothingFits())->toBeTrue()
+        ->and($stored['cook'])->toBe('partner');
 
     HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
 
     [, $output] = plannedWith();
 
     expect($output)->toContain('not tagged for Milly')
-        ->and($output)->not->toContain('Partner');
+        ->and($output)->not->toContain('Partner')
+        // The row was not rewritten: the same counts now read as Milly.
+        ->and($locked->refresh()->pick_reason)->toBe($stored);
 });
 
 it('fills a night nothing fitted once the vault has what it asked for', function () {

@@ -202,6 +202,7 @@ final class MealPlanner
                 'selection' => $night->selection,
                 'recipe_id' => $night->recipe_id,
                 'freezer_item_id' => $night->freezer_item_id,
+                'holds_freezer_portion' => $night->holdsFreezerPortion(),
             ];
             $previousKey = Pick::fromPlanNight($night)->mealKey();
             $previousMeal = $night->hasMeal() ? $this->mealNameOf($night) : null;
@@ -782,11 +783,17 @@ final class MealPlanner
     /**
      * Put back what a night had, after a roll that found nothing better.
      *
-     * @param  array{selection: NightSelection|null, recipe_id: int|null, freezer_item_id: int|null}  $previous
+     * The portion is taken out again only if the night was holding one, exactly as
+     * the release hands one back only if it was. Reserving on the strength of "the
+     * meal was a freezer meal" would spend a portion for a row that never had one
+     * — a re-roll that changed nothing, quietly costing the household a portion,
+     * and refusing outright once the box was down to its last.
+     *
+     * @param  array{selection: NightSelection|null, recipe_id: int|null, freezer_item_id: int|null, holds_freezer_portion: bool}  $previous
      */
     private function restore(PlanNight $night, array $previous, Pick $pick): void
     {
-        if ($previous['selection'] === NightSelection::FreezerItem && $previous['freezer_item_id'] !== null) {
+        if ($previous['holds_freezer_portion'] && $previous['freezer_item_id'] !== null) {
             $this->reservePortionFor($night, $previous['freezer_item_id']);
         }
 

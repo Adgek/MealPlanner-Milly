@@ -131,3 +131,23 @@ it('keeps the count when a plan whose nights have gone by is deleted', function 
 
     expect($soup->refresh()->portions_left)->toBe(0);
 });
+
+it('spends no portion putting back a meal the night was not holding', function () {
+    // A hand-written night again, this time through the re-roll that finds nothing
+    // better and keeps what it had. Putting the meal back must not take a portion
+    // the night never had: the stash would quietly drop by one on a re-roll that
+    // changed nothing, and at the last portion it would fail outright.
+    $soup = FreezerItem::factory()->portions(1)->create();
+    $plan = Plan::factory()->window('2026-01-11')->create();
+    $night = PlanNight::factory()->for($plan)->on('2026-01-12')->withFreezerItem($soup)->create([
+        'cook' => CookAssignment::Partner,
+        'time_budget' => EffortTier::Chaos15,
+    ]);
+
+    $kept = (new MealPlanner)->rerollNight($night);
+
+    expect($kept->selection)->toBe(NightSelection::FreezerItem)
+        ->and($kept->freezer_item_id)->toBe($soup->id)
+        ->and($kept->holds_freezer_portion)->toBeFalse()
+        ->and($soup->refresh()->portions_left)->toBe(1);
+});

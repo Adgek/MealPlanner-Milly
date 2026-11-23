@@ -165,3 +165,20 @@ it('leaves another household plan alone when the windows do not overlap', functi
         ->and(Plan::count())->toBe(2)
         ->and(PlanNight::count())->toBe(7);
 });
+
+it('takes no night off another plan in a preview', function () {
+    // previewWindow() really plans, inside a transaction it rolls back. That now
+    // includes claiming nights, so the rollback has to cover it: a dry run must
+    // not quietly reshape the plan the household is cooking from.
+    Recipe::factory()->count(8)->create(['effort_tier' => EffortTier::Workhorse30]);
+    $planner = new MealPlanner;
+    $sunday = $planner->planWindow(seed: 1);
+    $before = $sunday->nights->pluck('recipe_id', 'date')->all();
+
+    shoppingDaysAre(Weekday::Tuesday, Weekday::Friday);
+    $picks = $planner->previewWindow(seed: 2);
+
+    expect($picks)->toHaveCount(3)
+        ->and(Plan::count())->toBe(1)
+        ->and($sunday->refresh()->nights->pluck('recipe_id', 'date')->all())->toBe($before);
+});

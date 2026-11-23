@@ -179,7 +179,8 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   `previewWindow()`, `picksFor()`, `rerollNight()`, `lockNight()`, `unlockNight()`,
   `chooseMeal()`, `setOverride()`, `clearOverride()` and
   `recordPastNightsAsCooked()`. A `Pick` is what a page or a message renders: the
-  night, what was chosen, and the note explaining it.
+  night, what was chosen, and why — `describe()` for the dinner,
+  `explain(HouseholdSettings::cookLabel(...))` for the words underneath it.
 
 - **A window is a span of calendar dates, and the shop's time is not part of it.**
   `ShoppingCalendar` derives "the next day through the next shopping day,

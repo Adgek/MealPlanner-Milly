@@ -126,6 +126,7 @@ final class MealPlanner
         return DB::transaction(function () use ($window, $seed, $replan) {
             $plan = $this->savePlan($window);
 
+            $this->claimNightsOfOtherPlans($plan, $window);
             $this->syncNightsWith($plan, $window);
             $this->fillNights($plan, $seed, $replan);
 
@@ -431,6 +432,68 @@ final class MealPlanner
         $plan->save();
 
         return $plan;
+    }
+
+    /**
+     * Take the nights of this window off any other plan that still claims them.
+     *
+     * Changing the shopping days is a first-class MM-4 action, and it moves where
+     * the windows fall. The plan already out was built for the old days, so its
+     * nights can land inside the window being planned now — and nothing else
+     * revisits it, because syncNightsWith() only ever prunes the plan it is
+     * handed. Two rows for one date is not a cosmetic problem: MM-9's daily
+     * reminder and MM-14's dashboard both ask `plan_nights.date` what the
+     * household is eating tonight and there is no tiebreak, the no-repeat ledger
+     * is per plan so the night could duplicate a dinner either side of it, and
+     * recordPastNightsAsCooked() would write two history rows for one dinner.
+     *
+     * The window being planned wins, because it is the shop that will actually
+     * buy the food. A night still to come hands its freezer portion back on the
+     * way out; a night that has gone by is history and stays with the plan that
+     * fed it. A plan left with no nights is no longer a plan, so it goes; one left
+     * shorter has its stored window narrowed to the nights it still has.
+     */
+    private function claimNightsOfOtherPlans(Plan $plan, ShoppingWindow $window): void
+    {
+        $claimed = PlanNight::query()
+            ->where('plan_id', '!=', $plan->getKey())
+            ->whereBetween('date', [
+                $window->firstNight->toDateString(),
+                $window->lastNight->toDateString(),
+            ])
+            ->get()
+            ->reject(fn (PlanNight $night) => $this->hasPassed($night));
+
+        foreach ($claimed as $night) {
+            $this->releaseNight($night);
+            $night->delete();
+        }
+
+        foreach ($claimed->pluck('plan_id')->unique() as $planId) {
+            $this->reshapeOrDrop(Plan::query()->find($planId));
+        }
+    }
+
+    /**
+     * Leave a plan that has given nights up describing the nights it has left.
+     */
+    private function reshapeOrDrop(?Plan $plan): void
+    {
+        if ($plan === null) {
+            return;
+        }
+
+        $nights = $plan->nights()->get();
+
+        if ($nights->isEmpty()) {
+            $plan->delete();
+
+            return;
+        }
+
+        $plan->first_night = $nights->first()->date->toDateString();
+        $plan->last_night = $nights->last()->date->toDateString();
+        $plan->save();
     }
 
     /**

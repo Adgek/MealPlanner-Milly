@@ -192,6 +192,19 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   There is **no weekday name anywhere in the picker.** Change the setting to Tuesday
   and Friday and the windows follow.
 
+- **One night has one dinner, across every plan there is.** Changing the shopping
+  days moves where the windows fall, so the plan already out can still claim
+  nights that now belong to the window being planned. `planWindow()` takes those
+  nights off the older plan — the shop that will buy the food wins — releasing any
+  freezer portion they were holding, narrowing that plan's stored window to what
+  it has left, and deleting it outright if nothing is left. A night that has
+  already gone by stays with the plan that fed it.
+
+  MM-9's daily reminder and MM-14's dashboard can therefore read
+  `plan_nights.date` and expect one row. Before this they could get two dinners
+  for one night with no way to choose, and `recordPastNightsAsCooked()` wrote a
+  history row for each.
+
 - **Three more settings, not constants.** `variety_lookback_days` (21),
   `partner_solo_effort_cap` (15-min chaos) and
   `freezer_meals_on_chaos_nights_only` (true). `PlanningRules::fromSettings()`

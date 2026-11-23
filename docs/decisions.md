@@ -233,6 +233,21 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   night that isn't locked and leaves the locked ones exactly as they are, which is
   what makes the plan page's lock worth having.
 
+- **A night that has gone by is history, and the planner will not touch it.**
+  "Until you shop, you can re-roll, lock or swap any night" — and only until then.
+  `rerollNight()` and `chooseMeal()` refuse a date before today on the kitchen
+  clock (`PlanningException::pastNight`), and `planWindow()` never rolls one, even
+  with `replan: true` or a `--shopping-date` pointing at a finished window. Tonight
+  is not the past: the fence falls at midnight, so the household can still change
+  their mind at 8pm.
+
+  Two things depended on this and had nothing enforcing it. Re-rolling a past
+  freezer night put a portion back in the stash that was eaten days ago. And
+  re-planning a finished window gave its nights new dinners, after which
+  `recordPastNightsAsCooked()` recorded both the meal the household ate and the
+  one the re-plan invented — three dinners becoming six recipes suppressed for the
+  whole lookback.
+
 - **The seed is an argument, not a stored column.** The same seed gives the same
   plan, which is how the tests pin the rules down. Plans deliberately don't
   remember a seed: a re-roll the household asks for should be a genuinely fresh

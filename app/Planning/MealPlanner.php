@@ -182,13 +182,16 @@ final class MealPlanner
      * what it had rather than losing a perfectly good dinner, and the note says
      * why.
      *
-     * A locked night is refused: unlock it first.
+     * A locked night is refused: unlock it first. So is a night that has already
+     * gone by, because that is no longer a plan — it is what the household ate.
      */
     public function rerollNight(PlanNight $night, ?int $seed = null): PlanNight
     {
         if ($night->is_locked) {
             throw PlanningException::lockedNight($night);
         }
+
+        $this->refuseIfPast($night);
 
         return DB::transaction(function () use ($night, $seed) {
             $previous = [
@@ -247,9 +250,15 @@ final class MealPlanner
      * happened.
      *
      * Pass lock: true to make the choice survive the next re-plan.
+     *
+     * A night that has already gone by is refused: swapping its meal would let go
+     * of a freezer portion that was eaten, and rewrite the history the variety
+     * rule is measured against.
      */
     public function chooseMeal(PlanNight $night, Recipe|FreezerItem $meal, bool $lock = false): PlanNight
     {
+        $this->refuseIfPast($night);
+
         return DB::transaction(function () use ($night, $meal, $lock) {
             // First, so swapping a freezer meal for itself or for another portion
             // of the same item hands the old one back before taking the new one.
@@ -470,22 +479,37 @@ final class MealPlanner
 
         // Nights this window no longer covers, because the shopping days changed.
         foreach ($existing as $key => $night) {
-            if (! isset($wanted[$key])) {
-                $this->releaseNight($night);
-                $night->delete();
+            if (isset($wanted[$key])) {
+                continue;
             }
+
+            // A night still to come hands its portion back; one that has gone by
+            // ate it, so the row goes without touching the stash.
+            if (! $this->hasPassed($night)) {
+                $this->releaseNight($night);
+            }
+
+            $night->delete();
         }
     }
 
     /**
      * Roll the nights that are open, keeping the ones that are not.
+     *
+     * A night that has gone by is never rolled, whatever is asked: re-planning a
+     * finished window would change dinners the household already cooked, and meal
+     * history — the only input the variety rule has — would then record both the
+     * meal they ate and the one the re-plan put there. Three dinners would become
+     * six suppressed recipes.
      */
     private function fillNights(Plan $plan, ?int $seed, bool $replan): void
     {
         $nights = $plan->nights()->get();
 
         $toRoll = $nights->filter(
-            fn (PlanNight $night) => ! $night->is_locked && ($replan || ! $night->isPlanned())
+            fn (PlanNight $night) => ! $night->is_locked
+                && ! $this->hasPassed($night)
+                && ($replan || ! $night->isPlanned())
         );
         $rollingIds = $toRoll->modelKeys();
 
@@ -552,6 +576,12 @@ final class MealPlanner
      */
     private function repickIfNeeded(PlanNight $night): void
     {
+        // The household may still record that they were away last Tuesday; the
+        // dinner that was cooked stands either way.
+        if ($this->hasPassed($night)) {
+            return;
+        }
+
         if ($night->is_locked || ! $night->isPlanned()) {
             return;
         }
@@ -565,6 +595,10 @@ final class MealPlanner
 
     private function releaseIfMealNoLongerFits(PlanNight $night): void
     {
+        if ($this->hasPassed($night)) {
+            return;
+        }
+
         if ($night->is_locked || ! $night->hasMeal() || $this->mealStillFits($night)) {
             return;
         }
@@ -715,6 +749,24 @@ final class MealPlanner
             ->where('plan_id', $night->plan_id)
             ->whereKeyNot($night->getKey())
             ->get();
+    }
+
+    /**
+     * Has this night already gone by?
+     *
+     * Tonight has not: a night is only history once its date is behind today on
+     * the kitchen clock, so the household can still change their mind at 8pm.
+     */
+    private function hasPassed(PlanNight $night): bool
+    {
+        return CalendarDate::of($night->date)->lessThan($this->today());
+    }
+
+    private function refuseIfPast(PlanNight $night): void
+    {
+        if ($this->hasPassed($night)) {
+            throw PlanningException::pastNight($night);
+        }
     }
 
     /**

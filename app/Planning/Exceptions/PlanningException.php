@@ -30,6 +30,22 @@ class PlanningException extends RuntimeException
     }
 
     /**
+     * A night that has gone by is history, not a plan.
+     *
+     * "Until you shop, you can re-roll, lock or swap any night" (docs/decisions.md)
+     * — and only until then. Changing last Monday's dinner would rewrite what the
+     * household ate, and letting go of its freezer portion would put soup back in
+     * the stash that was eaten two days ago.
+     */
+    public static function pastNight(PlanNight $night): self
+    {
+        return new self(sprintf(
+            'The night of %s has already gone by: what was on it is what was cooked.',
+            $night->date->toDateString(),
+        ));
+    }
+
+    /**
      * Planning a freezer meal spends a portion, so there has to be one. Without
      * this the stash count would go negative and MM-12's low-stash warning would
      * be measuring a number that never happened.

@@ -472,7 +472,7 @@ final class MealPlanner
                 $window->lastNight->toDateString(),
             ])
             ->get()
-            ->reject(fn (PlanNight $night) => $this->hasPassed($night));
+            ->reject(fn (PlanNight $night) => $night->hasPassed());
 
         foreach ($claimed as $night) {
             $this->releaseNight($night);
@@ -556,12 +556,10 @@ final class MealPlanner
                 continue;
             }
 
-            // A night still to come hands its portion back; one that has gone by
-            // ate it, so the row goes without touching the stash.
-            if (! $this->hasPassed($night)) {
-                $this->releaseNight($night);
-            }
-
+            // A night still to come hands its portion back on the way out; one
+            // that has gone by ate it, which PlanNight::releaseFreezerPortion()
+            // is what decides.
+            $this->releaseNight($night);
             $night->delete();
         }
     }
@@ -581,7 +579,7 @@ final class MealPlanner
 
         $toRoll = $nights->filter(
             fn (PlanNight $night) => ! $night->is_locked
-                && ! $this->hasPassed($night)
+                && ! $night->hasPassed()
                 && ($replan || $night->needsPicking())
         );
         $rollingIds = $toRoll->modelKeys();
@@ -660,7 +658,7 @@ final class MealPlanner
     {
         // The household may still record that they were away last Tuesday; the
         // dinner that was cooked stands either way.
-        if ($this->hasPassed($night)) {
+        if ($night->hasPassed()) {
             return;
         }
 
@@ -681,7 +679,7 @@ final class MealPlanner
 
     private function releaseIfMealNoLongerFits(PlanNight $night): void
     {
-        if ($this->hasPassed($night)) {
+        if ($night->hasPassed()) {
             return;
         }
 
@@ -840,20 +838,9 @@ final class MealPlanner
             ->get();
     }
 
-    /**
-     * Has this night already gone by?
-     *
-     * Tonight has not: a night is only history once its date is behind today on
-     * the kitchen clock, so the household can still change their mind at 8pm.
-     */
-    private function hasPassed(PlanNight $night): bool
-    {
-        return CalendarDate::of($night->date)->lessThan($this->today());
-    }
-
     private function refuseIfPast(PlanNight $night): void
     {
-        if ($this->hasPassed($night)) {
+        if ($night->hasPassed()) {
             throw PlanningException::pastNight($night);
         }
     }

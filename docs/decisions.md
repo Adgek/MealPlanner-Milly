@@ -235,7 +235,9 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
 
   **Deleting a plan releases what its nights were holding**, in a `deleting` event
   on `Plan`. It has to be the parent: `plan_nights.plan_id` cascades in MySQL, so
-  no `deleting` event on `PlanNight` can ever fire.
+  no `deleting` event on `PlanNight` can ever fire. A night that has gone by is
+  not released, there or anywhere — `PlanNight::hasPassed()` is the one definition
+  of the fence, and a portion on a night that has passed was eaten.
 
 - **"Nothing fits" is a stored outcome, not a failure.** `NightSelection` gained a
   `NothingFits` case, and the rest of the plan still goes ahead. Nobody nights are

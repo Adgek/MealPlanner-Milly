@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Enums\CookAssignment;
 use App\Enums\EffortTier;
 use App\Enums\NightSelection;
+use App\Planning\CalendarDate;
+use App\Settings\HouseholdSettings;
 use Carbon\CarbonImmutable;
 use Database\Factories\PlanNightFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -120,6 +122,23 @@ class PlanNight extends Model
     }
 
     /**
+     * Has this night already gone by?
+     *
+     * Tonight has not: a night is only history once its date is behind today on
+     * the **kitchen** clock, so the household can still change their mind at 8pm
+     * in Toronto when the server already says tomorrow.
+     *
+     * The one definition of the fence, because more than one thing needs it: the
+     * planner refuses to re-roll or swap a past night (docs/decisions.md), and
+     * releasing a past night's freezer portion would put food back in the stash
+     * that was eaten.
+     */
+    public function hasPassed(): bool
+    {
+        return CalendarDate::of($this->date)->lessThan(CalendarDate::today(HouseholdSettings::timeZone()));
+    }
+
+    /**
      * Is this night holding a portion out of the freezer stash?
      *
      * The reservation says so itself rather than being read off "the selection is
@@ -138,9 +157,11 @@ class PlanNight extends Model
      *
      * The only thing that ever increments portions_left, and it is conditional on
      * the reservation: releasing twice, releasing a hand-written row, or releasing
-     * a night that never reserved cannot invent food. The flag is cleared here but
-     * the row is left to the caller to save — the planner saves the whole night
-     * once, and Plan's cascade is about to delete it.
+     * a night that never reserved cannot invent food. Nor can releasing a night
+     * that has gone by — that portion was eaten, so the flag is dropped without
+     * the stash moving. The flag is cleared here but the row is left to the caller
+     * to save — the planner saves the whole night once, and Plan's cascade is
+     * about to delete it.
      */
     public function releaseFreezerPortion(): bool
     {
@@ -148,9 +169,11 @@ class PlanNight extends Model
             return false;
         }
 
+        // The night gives the reservation up either way. Whether the stash gets
+        // the portion back is the separate question.
         $this->holds_freezer_portion = false;
 
-        if ($this->freezer_item_id === null) {
+        if ($this->hasPassed() || $this->freezer_item_id === null) {
             return false;
         }
 

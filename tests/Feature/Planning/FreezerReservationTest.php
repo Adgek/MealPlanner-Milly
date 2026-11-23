@@ -114,3 +114,20 @@ it('invents no portion when a deleted plan was holding none', function () {
 
     expect($soup->refresh()->portions_left)->toBe(1);
 });
+
+it('keeps the count when a plan whose nights have gone by is deleted', function () {
+    // The reservation on a night that has passed was eaten, not returned. The
+    // same fence the planner applies to a re-roll has to hold here, or deleting
+    // an old plan would restock the freezer with soup the household ate.
+    $soup = FreezerItem::factory()->portions(1)->create();
+    $planner = new MealPlanner;
+    $plan = $planner->planWindow();
+    $planner->chooseMeal($plan->nights[0], $soup);
+
+    expect($soup->refresh()->portions_left)->toBe(0);
+
+    Carbon::setTestNow(Carbon::parse('2026-01-20 08:00:00', 'America/Toronto'));
+    $plan->delete();
+
+    expect($soup->refresh()->portions_left)->toBe(0);
+});

@@ -1,0 +1,298 @@
+<?php
+
+namespace App\Grocery;
+
+use App\Models\Ingredient;
+use App\Models\KidBackupFood;
+use App\Models\Plan;
+use App\Models\PlanGroceryItem;
+use App\Models\Recipe;
+use App\Planning\MealPlanner;
+use App\Planning\Pick;
+use App\Settings\HouseholdSettings;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * The grocery list, as the rest of the app uses it.
+ *
+ * Everything other tickets need is here, and none of the merging rules are: this
+ * class reads the plan through MealPlanner, loads the ingredients, keeps the
+ * stored checklist in step and hands back plain values, while GroceryBasket,
+ * GroceryMerge and GroceryLine decide what the list says from plain values. That
+ * split is what lets the merge be unit-tested without a database (AGENTS.md).
+ *
+ * What the other tickets call:
+ *
+ *   listFor()     the stored list, ticks and all — MM-8's page, MM-14's dashboard
+ *   textFor()     the same list as plain text — MM-9's post
+ *   rebuild()     make the list again after the plan changed, and say what moved
+ *   previewFor()  what the window asks for, without storing any of it
+ *
+ * **The list is stored, not recomputed** (MM-3): both phones have to see the same
+ * ticks, and a re-roll must not rewrite the list somebody is standing in the shop
+ * with. So rebuild() reconciles rather than replacing — see its own docblock for
+ * what happens to a tick.
+ */
+final class GroceryListBuilder
+{
+    /**
+     * Both collaborators are optional and read from Settings when missing, so
+     * `new GroceryListBuilder` is the household's own configuration and a test
+     * can hand in a different store order or a different plan source.
+     */
+    public function __construct(
+        private readonly ?MealPlanner $planner = null,
+        private readonly ?GroceryMerge $merge = null,
+    ) {}
+
+    // -----------------------------------------------------------------
+    // Reading the list
+    // -----------------------------------------------------------------
+
+    /**
+     * The stored checklist for a plan: grouped by store section, pantry basics
+     * last, with each line's row id and tick.
+     *
+     * This is the list the household shops with. It is not derived from the plan
+     * on the way out — it is what rebuild() last wrote.
+     */
+    public function listFor(Plan $plan): GroceryList
+    {
+        return $this->merge()->group(
+            $plan->groceryItems()->get()
+                ->map(fn (PlanGroceryItem $item) => GroceryLine::fromStoredItem($item))
+                ->all(),
+        );
+    }
+
+    /**
+     * The stored list as plain text, for the household chat (MM-9) or a terminal.
+     *
+     * The dinners come with it, with the cooks under the household's own names.
+     */
+    public function textFor(Plan $plan): string
+    {
+        return GroceryListText::post(
+            $this->listFor($plan),
+            $plan->window(),
+            $this->picksFor($plan),
+            HouseholdSettings::cookLabel(...),
+        );
+    }
+
+    /**
+     * What this window asks for as the plan stands, storing nothing.
+     *
+     * The merge on its own: no ids, no ticks. Useful for a dry run and for seeing
+     * what a rebuild would do.
+     */
+    public function previewFor(Plan $plan): GroceryList
+    {
+        return $this->merge()->merge($this->needsFor($plan));
+    }
+
+    // -----------------------------------------------------------------
+    // Making it again
+    // -----------------------------------------------------------------
+
+    /**
+     * Make the list again from the plan as it stands, and say what moved.
+     *
+     * "Make the list again whenever the plan changes" has to live with "the
+     * checklist is stored": somebody may be holding the old list with ticks on
+     * it. So this reconciles the stored rows against what the window now asks
+     * for, line by line (docs/decisions.md, MM-7):
+     *
+     *   - a line that is **still needed keeps its row and its tick**, even when
+     *     the meals behind it changed. "We have this" does not stop being true
+     *     because Tuesday's dinner did;
+     *   - unless the plan now **asks for more of it** — then the tick is dropped,
+     *     because "we have enough" was true of the old amount;
+     *   - a line **nothing wants any more goes**, ticked or not. It is not part of
+     *     this shop;
+     *   - a line **nothing had asked for before is added, unticked**, so it stands
+     *     out as the thing the re-roll means you still have to buy.
+     *
+     * The plan is stamped (`grocery_list_changed_at`) only when something really
+     * moved, which is what lets MM-8 warn that the plan changed after the
+     * household had already shopped.
+     *
+     * A window whose last night has gone by is left exactly as it was: the
+     * planner will not change a night that has passed either, so there is nothing
+     * the list could be out of step with, and rewriting it would only damage the
+     * record of what was actually bought.
+     */
+    public function rebuild(Plan $plan): GroceryListUpdate
+    {
+        if ($plan->hasPassed()) {
+            return GroceryListUpdate::leftAlone(
+                $this->listFor($plan),
+                'That window is over: its list stands as it was shopped.',
+            );
+        }
+
+        return DB::transaction(function () use ($plan) {
+            $wanted = $this->previewFor($plan);
+            $rows = $this->storedRowsByMergeKey($plan);
+
+            $added = [];
+            $removed = [];
+            $unticked = [];
+            $amended = false;
+
+            foreach ($wanted->lines() as $line) {
+                $row = $rows->pull($line->mergeKey());
+
+                if ($row === null) {
+                    $plan->groceryItems()->create($line->toRow());
+                    $added[] = $line;
+
+                    continue;
+                }
+
+                $was = GroceryLine::fromStoredItem($row);
+                $row->fill($line->toRow());
+
+                if ($row->checked && $line->asksForMoreThan($was)) {
+                    $row->checked = false;
+                    $row->checked_at = null;
+                    $unticked[] = $line;
+                }
+
+                // Only a line that really reads differently counts as a change:
+                // the stamp has to mean "the list moved", not "somebody looked".
+                $amended = $amended || array_diff(
+                    array_keys($row->getDirty()),
+                    ['checked', 'checked_at'],
+                ) !== [];
+
+                $row->save();
+            }
+
+            // Whatever is left is on the old list and in none of the window's
+            // meals. A hand-written duplicate of a line lands here too, which
+            // quietly tidies it up.
+            foreach ($rows as $row) {
+                $removed[] = GroceryLine::fromStoredItem($row);
+                $row->delete();
+            }
+
+            $update = GroceryListUpdate::of(
+                $this->listFor($plan),
+                $added,
+                $removed,
+                $unticked,
+                $amended,
+            );
+
+            if ($update->changedAnything()) {
+                $plan->recordGroceryListChange();
+            }
+
+            return $update;
+        });
+    }
+
+    // -----------------------------------------------------------------
+    // Settings-backed collaborators
+    // -----------------------------------------------------------------
+
+    public function planner(): MealPlanner
+    {
+        return $this->planner ?? new MealPlanner;
+    }
+
+    public function merge(): GroceryMerge
+    {
+        return $this->merge ?? GroceryMerge::fromSettings();
+    }
+
+    // -----------------------------------------------------------------
+    // Reading the window
+    // -----------------------------------------------------------------
+
+    /**
+     * Everything the window asks for, in night order, with the kid backup foods
+     * on the end.
+     *
+     * @return array<int, IngredientNeed>
+     */
+    private function needsFor(Plan $plan): array
+    {
+        $picks = $this->picksFor($plan);
+
+        return GroceryBasket::needs(
+            $picks,
+            $this->needsByRecipe(GroceryBasket::recipeIds($picks)),
+            $this->kidBackupNeeds(),
+        );
+    }
+
+    /**
+     * The plan as a list of picks, through MealPlanner rather than re-derived:
+     * one door to what a window was planned as (docs/decisions.md, MM-6).
+     *
+     * @return array<int, Pick>
+     */
+    private function picksFor(Plan $plan): array
+    {
+        return $this->planner()->picksFor($plan);
+    }
+
+    /**
+     * The ingredients of the recipes the window chose, keyed by recipe id.
+     *
+     * Recipes only. Ingredients are one polymorphic table shared with kitchen
+     * projects (MM-3) precisely so that MM-12 can add a due project's ingredients
+     * to the same merge — but a project is not a dinner, and MM-12 is the ticket
+     * that decides when one is due.
+     *
+     * @param  array<int, int>  $recipeIds
+     * @return array<int, array<int, IngredientNeed>>
+     */
+    private function needsByRecipe(array $recipeIds): array
+    {
+        if ($recipeIds === []) {
+            return [];
+        }
+
+        return Ingredient::query()
+            ->where('ingredientable_type', (new Recipe)->getMorphClass())
+            ->whereIn('ingredientable_id', $recipeIds)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('ingredientable_id')
+            ->map(fn ($ingredients) => $ingredients
+                ->map(fn (Ingredient $ingredient) => IngredientNeed::fromIngredient($ingredient))
+                ->all())
+            ->all();
+    }
+
+    /**
+     * The kid off-ramp inventory, which goes on every list whatever is cooking
+     * (AppPlan.md, section 3).
+     *
+     * @return array<int, IngredientNeed>
+     */
+    private function kidBackupNeeds(): array
+    {
+        return KidBackupFood::query()
+            ->orderBy('name')
+            ->get()
+            ->map(fn (KidBackupFood $food) => IngredientNeed::fromKidBackupFood($food))
+            ->all();
+    }
+
+    /**
+     * The stored rows, keyed the way the merge keys a line.
+     *
+     * @return Collection<string, PlanGroceryItem>
+     */
+    private function storedRowsByMergeKey(Plan $plan): Collection
+    {
+        return $plan->groceryItems()
+            ->get()
+            ->keyBy(fn (PlanGroceryItem $item) => GroceryLine::fromStoredItem($item)->mergeKey());
+    }
+}

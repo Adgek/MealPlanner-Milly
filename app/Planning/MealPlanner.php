@@ -5,6 +5,7 @@ namespace App\Planning;
 use App\Enums\CookAssignment;
 use App\Enums\EffortTier;
 use App\Enums\NightSelection;
+use App\Grocery\GroceryListBuilder;
 use App\Models\FreezerItem;
 use App\Models\MealHistoryEntry;
 use App\Models\Plan;
@@ -36,6 +37,12 @@ use Illuminate\Support\Facades\DB;
  *
  * Plus the two that keep the data true: previewWindow() for a dry run, and
  * recordPastNightsAsCooked() for meal history.
+ *
+ * Every one of those that can change what is for dinner also makes the grocery
+ * list again (MM-7), because "the list matches the plan" is a property of the
+ * app rather than something each caller has to remember. The list reconciles
+ * rather than being replaced, so the ticks that still mean something survive a
+ * re-roll — see GroceryListBuilder::rebuild().
  */
 final class MealPlanner
 {
@@ -48,6 +55,7 @@ final class MealPlanner
         private readonly ?ShoppingCalendar $calendar = null,
         private readonly ?WeeklyCookSchedule $schedule = null,
         private readonly ?WindowPicker $picker = null,
+        private readonly ?GroceryListBuilder $groceries = null,
     ) {}
 
     // -----------------------------------------------------------------
@@ -129,9 +137,13 @@ final class MealPlanner
         return DB::transaction(function () use ($window, $seed, $replan) {
             $plan = $this->savePlan($window);
 
-            $this->claimNightsOfOtherPlans($plan, $window);
+            // The plans that gave nights up need their lists made again too: they
+            // are buying for one night fewer than they were.
+            $gaveNightsUp = $this->claimNightsOfOtherPlans($plan, $window);
             $this->syncNightsWith($plan, $window);
             $this->fillNights($plan, $seed, $replan);
+
+            $this->keepGroceriesInStep($plan, ...$gaveNightsUp);
 
             return $plan->load(['nights.recipe', 'nights.freezerItem']);
         });
@@ -223,6 +235,8 @@ final class MealPlanner
                 )));
             }
 
+            $this->keepGroceriesInStep($this->planOf($night));
+
             return $night;
         });
     }
@@ -286,6 +300,8 @@ final class MealPlanner
 
             $night->save();
 
+            $this->keepGroceriesInStep($this->planOf($night));
+
             return $night->load(['recipe', 'freezerItem']);
         });
     }
@@ -326,6 +342,8 @@ final class MealPlanner
                 $this->repickIfNeeded($night);
             }
 
+            $this->keepGroceriesInStep($this->planOf($night));
+
             return $night;
         });
     }
@@ -347,6 +365,8 @@ final class MealPlanner
             if ($repick) {
                 $this->repickIfNeeded($night);
             }
+
+            $this->keepGroceriesInStep($this->planOf($night));
 
             return $night;
         });
@@ -425,6 +445,17 @@ final class MealPlanner
         return $this->picker()->nightPicker();
     }
 
+    /**
+     * The grocery list, which this planner keeps in step with the plan (MM-7).
+     *
+     * It is handed this planner, so the list reads the window through the same
+     * door the rest of the app does rather than deriving one of its own.
+     */
+    public function groceries(): GroceryListBuilder
+    {
+        return $this->groceries ?? new GroceryListBuilder(planner: $this);
+    }
+
     // -----------------------------------------------------------------
     // Saving a plan
     // -----------------------------------------------------------------
@@ -469,8 +500,13 @@ final class MealPlanner
      * A night that has gone by is history and stays with the plan that fed it. A
      * plan left with no nights is no longer a plan, so it goes; one left shorter
      * has its stored window narrowed to the nights it still has.
+     *
+     * The plans that survive having given a night up come back, because their
+     * grocery lists are now buying for one night fewer (MM-7).
+     *
+     * @return array<int, Plan>
      */
-    private function claimNightsOfOtherPlans(Plan $plan, ShoppingWindow $window): void
+    private function claimNightsOfOtherPlans(Plan $plan, ShoppingWindow $window): array
     {
         $claimed = PlanNight::query()
             ->where('plan_id', '!=', $plan->getKey())
@@ -498,18 +534,27 @@ final class MealPlanner
             $night->save();
         }
 
+        $survivors = [];
+
         foreach ($origins as $planId) {
-            $this->reshapeOrDrop(Plan::query()->find($planId));
+            $survivor = $this->reshapeOrDrop(Plan::query()->find($planId));
+
+            if ($survivor !== null) {
+                $survivors[] = $survivor;
+            }
         }
+
+        return $survivors;
     }
 
     /**
-     * Leave a plan that has given nights up describing the nights it has left.
+     * Leave a plan that has given nights up describing the nights it has left,
+     * and hand it back if it is still a plan at all.
      */
-    private function reshapeOrDrop(?Plan $plan): void
+    private function reshapeOrDrop(?Plan $plan): ?Plan
     {
         if ($plan === null) {
-            return;
+            return null;
         }
 
         $nights = $plan->nights()->get();
@@ -517,12 +562,14 @@ final class MealPlanner
         if ($nights->isEmpty()) {
             $plan->delete();
 
-            return;
+            return null;
         }
 
         $plan->first_night = $nights->first()->date->toDateString();
         $plan->last_night = $nights->last()->date->toDateString();
         $plan->save();
+
+        return $plan;
     }
 
     /**
@@ -882,6 +929,29 @@ final class MealPlanner
     {
         if ($night->hasPassed()) {
             throw PlanningException::pastNight($night);
+        }
+    }
+
+    /**
+     * The plan a night belongs to, read fresh: the night may have been moved
+     * between plans a moment ago.
+     */
+    private function planOf(PlanNight $night): ?Plan
+    {
+        return $night->plan()->first();
+    }
+
+    /**
+     * Make the grocery list again for every plan a change touched.
+     *
+     * Nulls are allowed through so a caller does not have to prove a night still
+     * has a plan, and rebuilding is idempotent: a change that left the meals alone
+     * (a note-only override, a lock) writes nothing and stamps nothing.
+     */
+    private function keepGroceriesInStep(?Plan ...$plans): void
+    {
+        foreach (array_filter($plans) as $plan) {
+            $this->groceries()->rebuild($plan);
         }
     }
 

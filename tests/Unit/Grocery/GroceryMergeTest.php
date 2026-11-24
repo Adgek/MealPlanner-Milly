@@ -151,6 +151,52 @@ it('gives a thing with no section a home at the end of the shopping', function (
     expect($list->sectionNames())->toBe(['Produce', GrocerySection::UNSECTIONED]);
 });
 
+it('hands a page the whole list as plain arrays', function () {
+    // The structured output the ticket asks for: what MM-8 renders and MM-14
+    // shows on the tablet, with no models behind it.
+    $list = theMerged([
+        aNeed('Ground beef', 1, 'lb', 'Meat', meal: 'Chili'),
+        aNeed('Ground beef', 1, 'lb', 'Meat', meal: 'White Boy Tacos'),
+        aNeed('Cumin', 1, 'tbsp', 'Pantry', pantryBasic: true, meal: 'Chili'),
+    ]);
+
+    expect($list->toArray())->toBe([
+        'sections' => [[
+            'section' => 'Meat',
+            'lines' => [[
+                // Null until the line is stored; MM-8 ticks a line by its id.
+                'id' => null,
+                'name' => 'Ground beef',
+                'quantity' => 2.0,
+                'unit' => 'lb',
+                'amount' => '2 lb',
+                'section' => 'Meat',
+                'pantry_basic' => false,
+                'meals' => ['Chili', 'White Boy Tacos'],
+                'checked' => false,
+                'checked_at' => null,
+            ]],
+        ]],
+        'pantry_basics' => [
+            'section' => GrocerySection::PANTRY_BASICS,
+            'lines' => [[
+                'id' => null,
+                'name' => 'Cumin',
+                'quantity' => 1.0,
+                'unit' => 'tbsp',
+                'amount' => '1 tbsp',
+                'section' => 'Pantry',
+                'pantry_basic' => true,
+                'meals' => ['Chili'],
+                'checked' => false,
+                'checked_at' => null,
+            ]],
+        ],
+        'count' => 2,
+        'checked' => 0,
+    ]);
+});
+
 it('keeps an empty window’s list empty', function () {
     expect(theMerged([])->isEmpty())->toBeTrue()
         ->and(theMerged([])->sectionNames())->toBe([]);

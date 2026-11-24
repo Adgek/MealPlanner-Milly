@@ -4,6 +4,7 @@ use App\Enums\CookableBy;
 use App\Enums\CookAssignment;
 use App\Enums\EffortTier;
 use App\Enums\Weekday;
+use App\Grocery\IngredientNeed;
 use App\Models\CookScheduleNight;
 use App\Planning\CalendarDate;
 use App\Planning\FreezerOption;
@@ -171,6 +172,35 @@ function aWeek(
 function aShoppingCalendar(Weekday ...$days): ShoppingCalendar
 {
     return new ShoppingCalendar($days === [] ? [Weekday::Sunday, Weekday::Wednesday] : $days);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Grocery builders (MM-7)
+|--------------------------------------------------------------------------
+|
+| The merge works with plain values too, so its unit tests need one thing a
+| recipe's ingredient row: a need. Defaults to the awkward end of the range
+| — no amount, no unit, no section — so a test says only what it is about.
+|
+*/
+
+function aNeed(
+    string $name,
+    ?float $quantity = null,
+    ?string $unit = null,
+    ?string $section = null,
+    bool $pantryBasic = false,
+    ?string $meal = null,
+): IngredientNeed {
+    return new IngredientNeed(
+        name: $name,
+        quantity: $quantity,
+        unit: $unit,
+        storeSection: $section,
+        pantryBasic: $pantryBasic,
+        meal: $meal,
+    );
 }
 
 /*

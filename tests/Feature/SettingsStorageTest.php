@@ -60,8 +60,9 @@ it('reads every setting in one query for the settings page', function () {
 });
 
 it('offers a typed default for every starting setting', function () {
-    // The rows under "Starting settings" in docs/decisions.md. The last three are
-    // the picker's own household values, added by MM-6.
+    // The rows under "Starting settings" in docs/decisions.md. The last four are
+    // household values a later ticket needed and the Settings page does not show
+    // yet: three from the picker (MM-6) and the store's own order (MM-7).
     expect(array_keys(HouseholdSettings::defaults()))->toBe([
         'cook_names',
         'time_zone',
@@ -75,6 +76,7 @@ it('offers a typed default for every starting setting', function () {
         'variety_lookback_days',
         'partner_solo_effort_cap',
         'freezer_meals_on_chaos_nights_only',
+        'store_section_order',
     ]);
 });
 
@@ -90,7 +92,10 @@ it('reads the starting settings without any rows in the table', function () {
         ->and(HouseholdSettings::lowFreezerStashPortions())->toBe(2)
         ->and(HouseholdSettings::varietyLookbackDays())->toBe(21)
         ->and(HouseholdSettings::partnerSoloEffortCap())->toBe(EffortTier::Chaos15)
-        ->and(HouseholdSettings::freezerMealsOnChaosNightsOnly())->toBeTrue();
+        ->and(HouseholdSettings::freezerMealsOnChaosNightsOnly())->toBeTrue()
+        // Empty until the household writes their walk round the store down: the
+        // grocery list is alphabetical by section in the meantime (MM-7).
+        ->and(HouseholdSettings::storeSectionOrder())->toBe([]);
 });
 
 it('reads the two shopping windows as weekdays and times', function () {

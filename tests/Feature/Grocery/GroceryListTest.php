@@ -198,6 +198,17 @@ it('leaves a window with nothing planned an empty list', function () {
         ->and($plan->refresh()->hasGroceryList())->toBeFalse();
 });
 
+it('leaves no list behind after a dry run', function () {
+    // previewWindow() really plans, inside a transaction it then rolls back, so
+    // the list it makes on the way has to roll back with it.
+    aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
+
+    (new MealPlanner)->previewWindow();
+
+    expect(PlanGroceryItem::count())->toBe(0)
+        ->and(Plan::count())->toBe(0);
+});
+
 it('says what the window asks for without storing any of it', function () {
     $chili = aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
     $plan = aPlanOf($chili);

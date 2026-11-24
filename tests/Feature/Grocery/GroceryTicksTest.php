@@ -227,6 +227,35 @@ it('says what moved, so the household can be told', function () {
         ->and($update->list->lineFor('Ground beef', 'lb')->checked)->toBeTrue();
 });
 
+it('keeps one line when a line has somehow been stored twice', function () {
+    // An import, a factory or two rebuilds racing each other can leave two rows
+    // for one line. The ticked one survives — that tick is somebody's work at the
+    // fridge — and the tidy-up is not treated as the list changing.
+    $chili = aRecipeFor('Chili', 'Ground beef');
+    $planner = new MealPlanner;
+    $plan = $planner->planWindow();
+    $planner->chooseMeal($plan->nights[0], $chili);
+    $planner->chooseMeal($plan->refresh()->nights[1], $chili);
+    $planner->chooseMeal($plan->refresh()->nights[2], $chili);
+
+    $stamped = $plan->refresh()->grocery_list_changed_at;
+
+    PlanGroceryItem::factory()->for($plan)->checked()->create([
+        'name' => 'Ground beef',
+        'quantity' => 3,
+        'unit' => 'lb',
+        'store_section' => 'Meat',
+        'meals' => ['Chili'],
+    ]);
+
+    $update = (new GroceryListBuilder)->rebuild($plan->refresh());
+
+    expect(PlanGroceryItem::query()->where('name', 'Ground beef')->count())->toBe(1)
+        ->and(theLineFor('Ground beef')->checked)->toBeTrue()
+        ->and($update->changedAnything())->toBeFalse()
+        ->and($plan->refresh()->grocery_list_changed_at->eq($stamped))->toBeTrue();
+});
+
 it('leaves a window that has already been eaten exactly as it was shopped', function () {
     $chili = aRecipeFor('Chili', 'Ground beef');
     $plan = (new MealPlanner)->planWindow();

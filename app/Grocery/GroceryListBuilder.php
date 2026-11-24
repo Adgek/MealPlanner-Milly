@@ -60,7 +60,7 @@ final class GroceryListBuilder
     public function listFor(Plan $plan): GroceryList
     {
         return $this->merge()->group(
-            $plan->groceryItems()->get()
+            $this->storedRows($plan)
                 ->map(fn (PlanGroceryItem $item) => GroceryLine::fromStoredItem($item))
                 ->all(),
         );
@@ -142,15 +142,16 @@ final class GroceryListBuilder
             $amended = false;
 
             foreach ($wanted->lines() as $line) {
-                $row = $rows->pull($line->mergeKey());
+                $stored = $rows->pull($line->mergeKey());
 
-                if ($row === null) {
+                if ($stored === null) {
                     $plan->groceryItems()->create($line->toRow());
                     $added[] = $line;
 
                     continue;
                 }
 
+                $row = $this->oneRowOf($stored);
                 $was = GroceryLine::fromStoredItem($row);
                 $row->fill($line->toRow());
 
@@ -171,9 +172,8 @@ final class GroceryListBuilder
             }
 
             // Whatever is left is on the old list and in none of the window's
-            // meals. A hand-written duplicate of a line lands here too, which
-            // quietly tidies it up.
-            foreach ($rows as $row) {
+            // meals.
+            foreach ($rows->flatten() as $row) {
                 $removed[] = GroceryLine::fromStoredItem($row);
                 $row->delete();
             }
@@ -285,14 +285,49 @@ final class GroceryListBuilder
     }
 
     /**
-     * The stored rows, keyed the way the merge keys a line.
+     * The stored rows, oldest first, so the line a household has been ticking is
+     * the one the reconcile recognises.
      *
-     * @return Collection<string, PlanGroceryItem>
+     * @return Collection<int, PlanGroceryItem>
+     */
+    private function storedRows(Plan $plan): Collection
+    {
+        return $plan->groceryItems()->orderBy('id')->get();
+    }
+
+    /**
+     * The stored rows grouped the way the merge keys a line.
+     *
+     * Grouped rather than keyed, because two rows can carry one line: a factory
+     * or an import can write the same name and unit twice, and two rebuilds
+     * racing each other could each insert it. Keying would silently drop one of
+     * them from the reconcile and leave it on the list forever.
+     *
+     * @return Collection<string, Collection<int, PlanGroceryItem>>
      */
     private function storedRowsByMergeKey(Plan $plan): Collection
     {
-        return $plan->groceryItems()
-            ->get()
-            ->keyBy(fn (PlanGroceryItem $item) => GroceryLine::fromStoredItem($item)->mergeKey());
+        return $this->storedRows($plan)
+            ->groupBy(fn (PlanGroceryItem $item) => GroceryLine::fromStoredItem($item)->mergeKey());
+    }
+
+    /**
+     * The one row that is going to carry a line, with any others deleted.
+     *
+     * The ticked one wins, because that tick is the household's work; otherwise
+     * the oldest. The rows that go are not reported as removed: they were never a
+     * line of their own, and treating a tidy-up as a change would stamp the plan
+     * and have MM-8 warn about a list that reads exactly as it did.
+     *
+     * @param  Collection<int, PlanGroceryItem>  $stored
+     */
+    private function oneRowOf(Collection $stored): PlanGroceryItem
+    {
+        $keep = $stored->firstWhere('checked', true) ?? $stored->first();
+
+        $stored->reject(fn (PlanGroceryItem $row) => $row->is($keep))
+            ->each(fn (PlanGroceryItem $row) => $row->delete());
+
+        return $keep;
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Recipe;
+use App\Settings\HouseholdSettings;
 use App\Vault\MealUsage;
 use App\Vault\Retirement;
 use Illuminate\Database\Eloquent\Collection;
@@ -121,6 +122,17 @@ class Recipes extends Component
         }
 
         $this->done($name.' is deleted.');
+    }
+
+    /**
+     * Who the household says may cook a recipe, under their own names.
+     *
+     * Through HouseholdSettings, like everything that shows a cook to a person
+     * (MM-4), so renaming a cook in Settings renames them on this list too.
+     */
+    public function whoCanCookIt(Recipe $recipe): string
+    {
+        return HouseholdSettings::cookableByLabel($recipe->cookable_by);
     }
 
     /**

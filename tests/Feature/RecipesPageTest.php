@@ -9,6 +9,7 @@ use App\Models\Plan;
 use App\Models\PlanNight;
 use App\Models\Recipe;
 use App\Planning\MealPlanner;
+use App\Settings\HouseholdSettings;
 use Livewire\Livewire;
 
 /*
@@ -59,6 +60,24 @@ it('offers the way in: add, edit and the bulk ingredients', function () {
         ->assertSee('href="'.route('recipes.new').'"', escape: false)
         ->assertSee('href="'.route('recipes.edit', $recipe).'"', escape: false)
         ->assertSee('href="'.route('recipes.bulk-ingredients').'"', escape: false);
+});
+
+it('calls the cooks by the household’s own names', function () {
+    // Anything showing a cook to a person goes through HouseholdSettings, so
+    // renaming one in Settings renames them here too (MM-4).
+    HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
+
+    Recipe::factory()->cookableBy(CookableBy::Me)->create(['name' => 'Chili']);
+    Recipe::factory()->cookableBy(CookableBy::Partner)->create(['name' => 'Pupusas']);
+    Recipe::factory()->cookableBy(CookableBy::Both)->create(['name' => 'Tacos']);
+
+    $this->get(route('recipes'))
+        ->assertOk()
+        ->assertSee('Adrian')
+        ->assertSee('Milly')
+        // "Both" is not a person, so it keeps the tag's own label.
+        ->assertSee('Both')
+        ->assertDontSee('Partner');
 });
 
 it('says what an empty vault means', function () {

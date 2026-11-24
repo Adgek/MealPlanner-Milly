@@ -93,6 +93,18 @@ it('offers the stash to top up, and the option of stocking the fridge instead', 
         ->assertDontSee('Frozen lasagne');
 });
 
+it('still offers the item a project already points at, out of the stash or not', function () {
+    // Otherwise the select would quietly show "Nothing — it stocks the fridge"
+    // for a project that does stock the freezer, and saving would make that true.
+    $lasagne = FreezerItem::factory()->retired()->create(['name' => 'Frozen lasagne']);
+    $project = KitchenProject::factory()->producing($lasagne, 4)->create(['name' => 'Big batch lasagne']);
+
+    Livewire::test(ProjectEditor::class, ['project' => $project])
+        ->assertSet('producesFreezerItemId', (string) $lasagne->id)
+        ->assertSet('producesPortions', '4')
+        ->assertSee('Frozen lasagne (out of the stash)');
+});
+
 it('saves a project that fills the freezer', function () {
     $soup = FreezerItem::factory()->create(['name' => 'Frozen minestrone']);
 

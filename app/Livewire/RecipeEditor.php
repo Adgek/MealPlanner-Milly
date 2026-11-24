@@ -7,6 +7,7 @@ use App\Enums\EffortTier;
 use App\Livewire\Concerns\EditsIngredients;
 use App\Models\BulkIngredient;
 use App\Models\Recipe;
+use App\Settings\HouseholdSettings;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -207,6 +208,11 @@ class RecipeEditor extends Component
     }
 
     /**
+     * Who may be tagged, under the household's own names.
+     *
+     * Through HouseholdSettings, like everything that shows a cook to a person
+     * (MM-4): rename a cook in Settings and this select renames with it.
+     *
      * @return array<string, string>
      */
     public function cookableByOptions(): array
@@ -214,7 +220,7 @@ class RecipeEditor extends Component
         $options = [];
 
         foreach (CookableBy::cases() as $case) {
-            $options[$case->value] = $case->label();
+            $options[$case->value] = HouseholdSettings::cookableByLabel($case);
         }
 
         return $options;

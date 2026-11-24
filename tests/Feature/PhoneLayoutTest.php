@@ -82,12 +82,14 @@ it('makes every field full width and big enough not to zoom the page', function 
             && ! str_contains($tag, 'type="hidden"'),
     );
 
-    // A list page (the vault) has no fields of its own, which is fine: what
-    // matters is that the ones there are can be typed into one-handed.
+    // Guarded, like the buttons: a page that stopped rendering its fields would
+    // otherwise pass this test by having nothing to check.
+    expect($fields)->not->toBeEmpty();
+
     foreach ($fields as $field) {
         expect($field)->toContain('w-full')->toContain('text-base');
     }
-})->with('edit screens');
+})->with('screens with fields');
 
 it('keeps a checkbox’s label as the tap target', function () {
     $html = $this->get(theScreenAt('recipes.edit'))->assertOk()->getContent();
@@ -112,6 +114,19 @@ it('keeps the save button reachable from anywhere in a long form', function (str
 
 dataset('edit screens', [
     'the vault' => ['recipes'],
+    'a recipe' => ['recipes.edit'],
+    'a new recipe' => ['recipes.new'],
+    'the bulk packs' => ['recipes.bulk-ingredients'],
+    'the kitchen' => ['kitchen'],
+    'a project' => ['kitchen.projects.edit'],
+    'a new project' => ['kitchen.projects.new'],
+    'the kid foods' => ['kid-foods'],
+    'the settings' => ['settings'],
+]);
+
+// Every screen above except the vault, which is a list of recipes with no
+// fields of its own.
+dataset('screens with fields', [
     'a recipe' => ['recipes.edit'],
     'a new recipe' => ['recipes.new'],
     'the bulk packs' => ['recipes.bulk-ingredients'],

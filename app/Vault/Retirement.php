@@ -87,18 +87,31 @@ final class Retirement
      * Refused otherwise, and says so by handing back false rather than throwing:
      * a page that has been open while the plan changed underneath it should show
      * the household why, not a stack trace.
+     *
+     * The check and the delete are one transaction, with the row locked for the
+     * length of it. Without that they are two statements with a gap in between:
+     * a plan being made in the scheduler could claim the recipe after the check
+     * said nothing pointed at it, and the delete would then null that night out.
+     * The lock also makes the ingredient cascade part of the same unit of work,
+     * so a failure halfway cannot take the ingredients without the recipe.
      */
     public function deleteForGood(Recipe|FreezerItem $meal): bool
     {
-        $usage = MealUsage::of($meal, $this->planner());
+        return DB::transaction(function () use ($meal): bool {
+            $locked = $meal->newQuery()->lockForUpdate()->find($meal->getKey());
 
-        if (! $usage->canBeDeletedForGood()) {
-            return false;
-        }
+            if ($locked === null) {
+                return false;
+            }
 
-        // Ingredients are polymorphic and are deleted by a model event on the
-        // parent, so this has to be a model delete rather than a mass one.
-        return (bool) $meal->delete();
+            if (! MealUsage::of($locked, $this->planner())->canBeDeletedForGood()) {
+                return false;
+            }
+
+            // Ingredients are polymorphic and are deleted by a model event on the
+            // parent, so this has to be a model delete rather than a mass one.
+            return (bool) $locked->delete();
+        });
     }
 
     /**

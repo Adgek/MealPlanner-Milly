@@ -147,7 +147,10 @@ it('refuses an amount that is not a number', function (string $value, string $me
     expect(KidBackupFood::query()->firstWhere('name', 'Bread')->quantity)->toBe(1.0);
 })->with([
     'words' => ['a few', 'Give the amount as a number'],
-    'negative' => ['-1', 'An amount cannot be negative.'],
+    'negative' => ['-1', 'An amount has to be more than zero.'],
+    // Zero would put "Bread — 0 loaf" on the grocery list. Leave it empty to say
+    // you do not count it.
+    'zero' => ['0', 'An amount has to be more than zero.'],
     'three decimals' => ['1.333', 'two decimal places'],
 ]);
 

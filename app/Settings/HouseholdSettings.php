@@ -2,6 +2,7 @@
 
 namespace App\Settings;
 
+use App\Enums\CookableBy;
 use App\Enums\CookAssignment;
 use App\Enums\EffortTier;
 use App\Enums\Weekday;
@@ -174,6 +175,24 @@ class HouseholdSettings
     public static function cookLabel(CookAssignment $cook): string
     {
         return self::cookNames()[$cook->value] ?? $cook->label();
+    }
+
+    /**
+     * What to call the people a recipe is tagged for (MM-15).
+     *
+     * CookableBy is a property of a recipe rather than of a night, but two of its
+     * three cases are the same two people, so they are called by the household's
+     * own names here as well — the rule is that anything showing a cook to a
+     * person goes through this class. "Both" is not a person and keeps the tag's
+     * own label.
+     */
+    public static function cookableByLabel(CookableBy $cookableBy): string
+    {
+        return match ($cookableBy) {
+            CookableBy::Me => self::cookLabel(CookAssignment::Me),
+            CookableBy::Partner => self::cookLabel(CookAssignment::Partner),
+            CookableBy::Both => $cookableBy->label(),
+        };
     }
 
     /**

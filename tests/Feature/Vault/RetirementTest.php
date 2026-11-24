@@ -241,6 +241,48 @@ it('deletes a recipe nothing points at, and its ingredients and prep steps with 
         ->and($recipe->bulkIngredients()->count())->toBe(0);
 });
 
+it('loses nothing when a delete fails halfway through', function () {
+    $recipe = Recipe::factory()->withIngredients(3)->create();
+
+    // Something goes wrong once the row is gone: a constraint, another listener,
+    // a dropped connection. The ingredients are polymorphic and were deleted by
+    // the model event on the way in (MM-3), so without one transaction around
+    // the whole thing the recipe and its ingredients are both lost with no way
+    // back.
+    Recipe::deleted(function (): void {
+        throw new RuntimeException('the database went away');
+    });
+
+    try {
+        (new Retirement)->deleteForGood($recipe);
+    } catch (RuntimeException) {
+        // What survives is the point.
+    }
+
+    expect(Recipe::query()->count())->toBe(1)
+        ->and(Ingredient::query()->count())->toBe(3);
+});
+
+it('leaves a locked night holding its freezer portion', function () {
+    $planner = new MealPlanner;
+
+    $soup = FreezerItem::factory()->portions(2)->create(['name' => 'Frozen minestrone']);
+    $night = PlanNight::factory()->for(Plan::factory())->on(aNightDate(2))->create();
+
+    $planner->chooseMeal($night, $soup, lock: true);
+
+    expect($soup->fresh()->portions_left)->toBe(1);
+
+    (new Retirement)->retire($soup);
+
+    // The night keeps the meal, so it keeps the portion it is holding. Handing
+    // that portion back while the night still plans to eat it would count the
+    // same food twice, and the stash is the only thing the app counts.
+    expect($soup->fresh()->portions_left)->toBe(1)
+        ->and($night->fresh()->freezer_item_id)->toBe($soup->id)
+        ->and($night->fresh()->holdsFreezerPortion())->toBeTrue();
+});
+
 it('refuses to delete a recipe the household has cooked', function () {
     $chili = Recipe::factory()->create();
     MealHistoryEntry::factory()->create(['recipe_id' => $chili->id, 'cooked_on' => aNightDate(-4)]);

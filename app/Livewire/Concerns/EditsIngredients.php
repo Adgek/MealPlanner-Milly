@@ -5,6 +5,7 @@ namespace App\Livewire\Concerns;
 use App\Models\Ingredient;
 use App\Models\KitchenProject;
 use App\Models\Recipe;
+use Closure;
 
 /**
  * The "what to buy for it" repeater, shared by the recipe editor and the
@@ -107,10 +108,12 @@ trait EditsIngredients
     {
         return [
             'ingredients' => ['array', 'max:80'],
-            'ingredients.*.name' => ['required', 'string', 'max:120'],
+            'ingredients.*.name' => ['required', 'string', 'max:120', $this->notAlreadyOnThisList()],
             // Two decimal places, because that is what the column stores: a third
-            // would be rounded away without anybody being told.
-            'ingredients.*.quantity' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'decimal:0,2'],
+            // would be rounded away without anybody being told. More than zero,
+            // because 0.01 is the smallest amount there is and a zero would put a
+            // line on the grocery list telling the household to buy none of it.
+            'ingredients.*.quantity' => ['nullable', 'numeric', 'min:0.01', 'max:999999.99', 'decimal:0,2'],
             'ingredients.*.unit' => ['nullable', 'string', 'max:40'],
             'ingredients.*.store_section' => ['nullable', 'string', 'max:60'],
             'ingredients.*.pantry_basic' => ['boolean'],
@@ -128,7 +131,8 @@ trait EditsIngredients
             'ingredients.*.name.max' => 'Keep an ingredient name to 120 characters or fewer.',
             'ingredients.*.quantity.numeric' => 'Give the amount as a number, like 1 or 0.5. The unit goes in its own box.',
             'ingredients.*.quantity.decimal' => 'Amounts are stored to two decimal places. Round it first.',
-            'ingredients.*.quantity.min' => 'An amount cannot be negative.',
+            'ingredients.*.quantity.min' => 'An amount has to be more than zero. Leave it empty for '
+                .'something you do not measure.',
             'ingredients.*.quantity.max' => 'That is a bigger amount than the list can hold.',
             'ingredients.*.unit.max' => 'Keep the unit short, like lb, g or can.',
             'ingredients.*.store_section.max' => 'Keep the store section to 60 characters or fewer.',
@@ -157,6 +161,44 @@ trait EditsIngredients
                 || $row['unit'] !== ''
                 || $row['store_section'] !== '',
         ));
+    }
+
+    /**
+     * The same thing in the same unit, listed twice.
+     *
+     * The grocery list merges by name and unit (MM-7), so two identical rows
+     * become one line of double the amount with nothing on the recipe saying
+     * why. Two different units are a different matter and are left alone: "2
+     * clove" and "1 tbsp" of garlic are two things to buy.
+     *
+     * Only the later row is refused, so the household is pointed at the one they
+     * added rather than at both.
+     */
+    private function notAlreadyOnThisList(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            $index = (int) explode('.', $attribute)[1];
+            $mine = $this->ingredientKey($this->ingredients[$index] ?? []);
+
+            foreach ($this->ingredients as $other => $row) {
+                if ($other < $index && $this->ingredientKey($row) === $mine) {
+                    $fail('That ingredient is on this recipe twice. Put the whole amount on one row.');
+
+                    return;
+                }
+            }
+        };
+    }
+
+    /**
+     * What the grocery list would merge this row on.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function ingredientKey(array $row): string
+    {
+        return mb_strtolower(trim((string) ($row['name'] ?? '')))
+            .'|'.mb_strtolower(trim((string) ($row['unit'] ?? '')));
     }
 
     /**

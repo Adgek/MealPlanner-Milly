@@ -32,7 +32,7 @@
                 <h3 class="text-base font-semibold text-stone-900">{{ $recipe->name }}</h3>
 
                 <p class="mt-1 text-sm text-stone-600">
-                    {{ $recipe->cookable_by->label() }} &middot; {{ $recipe->effort_tier->label() }}
+                    {{ $this->whoCanCookIt($recipe) }} &middot; {{ $recipe->effort_tier->label() }}
                 </p>
 
                 <p class="mt-1 text-xs text-stone-500">
@@ -102,7 +102,7 @@
                     <h3 class="text-base font-medium text-stone-900">{{ $recipe->name }}</h3>
 
                     <p class="mt-1 text-sm text-stone-600">
-                        {{ $recipe->cookable_by->label() }} &middot; {{ $recipe->effort_tier->label() }}
+                        {{ $this->whoCanCookIt($recipe) }} &middot; {{ $recipe->effort_tier->label() }}
                     </p>
 
                     <div class="mt-3 flex flex-col gap-2 sm:flex-row">

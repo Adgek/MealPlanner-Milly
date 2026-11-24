@@ -60,8 +60,10 @@ class KidFoods extends Component
             ];
 
             // The same bounds as an ingredient's amount, because the grocery list
-            // puts the two side by side.
-            $rules["rows.{$index}.quantity"] = ['nullable', 'numeric', 'min:0', 'max:999999.99', 'decimal:0,2'];
+            // puts the two side by side — including "more than zero", since a
+            // zero would put a line on the list telling the household to buy none
+            // of it.
+            $rules["rows.{$index}.quantity"] = ['nullable', 'numeric', 'min:0.01', 'max:999999.99', 'decimal:0,2'];
             $rules["rows.{$index}.unit"] = ['nullable', 'string', 'max:40'];
         }
 
@@ -79,7 +81,8 @@ class KidFoods extends Component
             'rows.*.name.max' => 'Keep the name to 120 characters or fewer.',
             'rows.*.quantity.numeric' => 'Give the amount as a number, like 1 or 2. The unit goes in its own box.',
             'rows.*.quantity.decimal' => 'Amounts are stored to two decimal places. Round it first.',
-            'rows.*.quantity.min' => 'An amount cannot be negative.',
+            'rows.*.quantity.min' => 'An amount has to be more than zero. Leave it empty for something '
+                .'you do not count.',
             'rows.*.quantity.max' => 'That is a bigger amount than the list can hold.',
             'rows.*.unit.max' => 'Keep the unit short, like box, bag or loaf.',
         ];

@@ -8,6 +8,7 @@ use App\Models\BulkIngredient;
 use App\Models\Ingredient;
 use App\Models\Recipe;
 use App\Models\RecipePrepStep;
+use App\Settings\HouseholdSettings;
 use Illuminate\Support\Carbon;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -124,6 +125,16 @@ it('renders the recipe’s values server-side, for the first paint', function ()
         ->assertOk()
         ->assertSee('value="Pupusas"', escape: false)
         ->assertSee('Save the recipe');
+});
+
+it('offers the cooks by the household’s own names', function () {
+    HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
+
+    Livewire::test(RecipeEditor::class)
+        ->assertSee('Adrian')
+        ->assertSee('Milly')
+        ->assertSee('Both')
+        ->assertDontSee('Partner');
 });
 
 it('says so when the recipe it is editing is out of the vault', function () {
@@ -384,11 +395,43 @@ it('refuses an amount the column would round away', function () {
         ->assertSee('two decimal places');
 });
 
-it('refuses a negative amount', function () {
-    aRecipeForm(['ingredients.0.quantity' => '-1'])
+it('refuses an amount that is not an amount', function (string $value) {
+    // Zero is not "no amount", it is a line on the grocery list that says to buy
+    // nothing: "Cumin — 0 tsp". Leaving the box empty is how you say you do not
+    // measure it.
+    aRecipeForm(['ingredients.0.quantity' => $value])
         ->call('save')
         ->assertHasErrors('ingredients.0.quantity')
-        ->assertSee('An amount cannot be negative.');
+        ->assertSee('An amount has to be more than zero.');
+})->with([
+    'zero' => ['0'],
+    'nothing at all' => ['0.00'],
+    'negative' => ['-1'],
+]);
+
+it('refuses the same ingredient twice on one recipe', function () {
+    // Two identical rows merge into one line of double the amount on the grocery
+    // list (MM-7), with nothing on the recipe saying why.
+    aRecipeForm(['ingredients' => [
+        ['name' => 'Ground beef', 'quantity' => '1', 'unit' => 'lb', 'store_section' => 'Meat', 'pantry_basic' => false],
+        ['name' => ' ground beef ', 'quantity' => '1', 'unit' => 'lb', 'store_section' => '', 'pantry_basic' => false],
+    ]])
+        ->call('save')
+        ->assertHasErrors('ingredients.1.name')
+        ->assertSee('That ingredient is on this recipe twice. Put the whole amount on one row.');
+
+    expect(Recipe::query()->count())->toBe(0);
+});
+
+it('allows the same ingredient in two different units', function () {
+    // "2 clove" and "1 tbsp" of garlic are two different things to buy, and the
+    // grocery list keeps them as two lines (MM-7).
+    aRecipeForm(['ingredients' => [
+        ['name' => 'Garlic', 'quantity' => '2', 'unit' => 'clove', 'store_section' => 'Produce', 'pantry_basic' => false],
+        ['name' => 'Garlic', 'quantity' => '1', 'unit' => 'tbsp', 'store_section' => 'Pantry', 'pantry_basic' => true],
+    ]])->call('save')->assertHasNoErrors();
+
+    expect(Recipe::query()->firstWhere('name', 'Beef Bulgogi')->ingredients)->toHaveCount(2);
 });
 
 it('refuses an amount bigger than the column holds', function () {

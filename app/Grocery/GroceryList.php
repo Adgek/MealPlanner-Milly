@@ -41,7 +41,7 @@ final class GroceryList
         $order ??= new GrocerySectionOrder;
 
         $basics = [];
-        $bySection = [];
+        $aisles = [];
 
         foreach ($lines as $line) {
             if ($line->pantryBasic) {
@@ -50,13 +50,24 @@ final class GroceryList
                 continue;
             }
 
-            $bySection[$line->section][] = $line;
+            /*
+             * Bucketed on the section's normalised name rather than the one that
+             * was typed. Sections are free text a person writes on a recipe
+             * (MM-3), so "Produce" and "produce" are one aisle and have to be one
+             * heading: two headings a few lines apart is how the lettuce gets
+             * crossed off and the onion under the second one never seen. The
+             * first spelling is what the household reads, exactly as for a line's
+             * own name.
+             */
+            $key = MergeKey::normalise($line->section);
+            $aisles[$key]['name'] ??= $line->section;
+            $aisles[$key]['lines'][] = $line;
         }
 
         $sections = [];
 
-        foreach ($order->sort(array_keys($bySection)) as $name) {
-            $sections[] = new GrocerySection($name, self::byName($bySection[$name]));
+        foreach ($order->sort(array_keys($aisles)) as $key) {
+            $sections[] = new GrocerySection($aisles[$key]['name'], self::byName($aisles[$key]['lines']));
         }
 
         return new self(

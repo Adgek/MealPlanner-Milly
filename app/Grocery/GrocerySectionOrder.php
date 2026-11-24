@@ -58,11 +58,19 @@ final class GrocerySectionOrder
      */
     public function sort(array $sections): array
     {
-        $sections = array_values(array_unique(array_map('strval', $sections)));
+        $unique = [];
 
-        usort($sections, fn (string $a, string $b) => $this->rank($a) <=> $this->rank($b));
+        // One entry per aisle, not per spelling: "Produce" and "produce" are the
+        // same trip round the store, and the first spelling is the one kept.
+        foreach (array_map('strval', $sections) as $section) {
+            $unique[MergeKey::normalise($section)] ??= $section;
+        }
 
-        return $sections;
+        $sorted = array_values($unique);
+
+        usort($sorted, fn (string $a, string $b) => $this->rank($a) <=> $this->rank($b));
+
+        return $sorted;
     }
 
     /**

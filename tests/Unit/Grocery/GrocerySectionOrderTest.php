@@ -84,3 +84,24 @@ it('sorts the lines inside a section by name', function () {
     expect(array_map(fn (GroceryLine $line) => $line->name, $list->lines()))
         ->toBe(['garlic', 'Lettuce', 'Onion']);
 });
+
+it('reads one aisle as one section however it was typed', function () {
+    // Store sections are free text a person types (MM-3), so this is the one
+    // input guaranteed to vary. Two headings two lines apart is how the lettuce
+    // gets crossed off and the onion never seen.
+    $list = GroceryList::of([
+        new GroceryLine(name: 'Lettuce', quantity: 1, unit: 'head', section: 'Produce'),
+        new GroceryLine(name: 'Onion', quantity: 2, section: 'produce'),
+        new GroceryLine(name: 'Garlic', quantity: 3, unit: 'clove', section: '  PRODUCE '),
+    ]);
+
+    expect($list->sectionNames())->toBe(['Produce'])
+        // The first spelling is the one the household reads, as for a line's name.
+        ->and($list->sections[0]->count())->toBe(3);
+});
+
+it('counts a section once when the household typed it twice', function () {
+    $order = new GrocerySectionOrder(['Meat']);
+
+    expect($order->sort(['Produce', 'produce', 'Meat']))->toBe(['Meat', 'Produce']);
+});

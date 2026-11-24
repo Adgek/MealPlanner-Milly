@@ -162,6 +162,96 @@ it('writes no part of the stash when one row is wrong', function () {
 
 /*
 |--------------------------------------------------------------------------
+| The form and the planner, both writing the same counts
+|--------------------------------------------------------------------------
+|
+| The stash count is the one number two things write: the household types it,
+| and the planner spends and hands back portions as nights are planned and
+| re-rolled (MM-6). A form that posts every count back would undo whatever the
+| planner did while the page was open.
+|
+*/
+
+it('leaves a count the household never touched alone', function () {
+    $soup = FreezerItem::factory()->portions(3)->create(['name' => 'Frozen minestrone']);
+
+    // The page is open on the counter.
+    $page = Livewire::test(Kitchen::class)->assertSet('rows.0.portions_left', '3');
+
+    // Meanwhile a night is planned around it, which spends a portion.
+    $night = PlanNight::factory()->for(Plan::factory())->on(aKitchenNight(1))->create();
+    (new MealPlanner)->chooseMeal($night, $soup);
+
+    expect($soup->fresh()->portions_left)->toBe(2);
+
+    // The household edits something else on the stale page and saves.
+    $page->set('rows.0.thaw_lead_time_hours', '12')->call('save')->assertHasNoErrors();
+
+    // The portion stays spent: the form only writes the counts it was told to.
+    expect($soup->fresh()->portions_left)->toBe(2)
+        ->and($soup->fresh()->thaw_lead_time_hours)->toBe(12);
+});
+
+it('still writes a count the household did change', function () {
+    $soup = FreezerItem::factory()->portions(3)->create(['name' => 'Frozen minestrone']);
+
+    Livewire::test(Kitchen::class)
+        ->set('rows.0.portions_left', '6')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($soup->fresh()->portions_left)->toBe(6);
+});
+
+it('does not hand a spent portion back when the form is saved after a removal', function () {
+    $planner = new MealPlanner;
+
+    $soup = FreezerItem::factory()->portions(3)->create(['name' => 'Frozen minestrone']);
+    $stew = FreezerItem::factory()->portions(2)->create(['name' => 'Frozen stew']);
+
+    // A chaos night, which is what a freezer meal is planned for by default.
+    $night = PlanNight::factory()->for(Plan::factory())->on(aKitchenNight(1))->create([
+        'time_budget' => EffortTier::Chaos15,
+    ]);
+    $planner->chooseMeal($night, $stew);
+
+    $page = Livewire::test(Kitchen::class);
+
+    // Removing the stew re-picks that night, which spends a portion of the soup
+    // — a row the household has not touched and whose count is now stale.
+    $page->call('confirmRemove', $stew->id)->call('retire', $stew->id);
+
+    expect($soup->fresh()->portions_left)->toBe(2)
+        ->and($night->fresh()->freezer_item_id)->toBe($soup->id)
+        ->and($night->fresh()->holdsFreezerPortion())->toBeTrue();
+
+    // The page shows what is really in the freezer...
+    $page->assertSet('rows.0.portions_left', '2');
+
+    // ...and saving it does not put the spent portion back.
+    $page->call('save')->assertHasNoErrors();
+
+    expect($soup->fresh()->portions_left)->toBe(2)
+        ->and($night->fresh()->holdsFreezerPortion())->toBeTrue();
+});
+
+it('keeps a count the household typed, even when the planner moved it underneath', function () {
+    $soup = FreezerItem::factory()->portions(3)->create(['name' => 'Frozen minestrone']);
+
+    // The household counts the freezer and types what is really in there.
+    $page = Livewire::test(Kitchen::class)->set('rows.0.portions_left', '8');
+
+    $night = PlanNight::factory()->for(Plan::factory())->on(aKitchenNight(1))->create();
+    (new MealPlanner)->chooseMeal($night, $soup);
+
+    $page->call('save')->assertHasNoErrors();
+
+    // What they typed wins: they were standing at the freezer.
+    expect($soup->fresh()->portions_left)->toBe(8);
+});
+
+/*
+|--------------------------------------------------------------------------
 | Taking a freezer meal out of the stash
 |--------------------------------------------------------------------------
 */

@@ -125,12 +125,31 @@ class Kitchen extends Component
 
                 $item->fill([
                     'name' => $row['name'],
-                    'portions_left' => (int) $row['portions_left'],
                     'thaw_lead_time_hours' => (int) $row['thaw_lead_time_hours'],
                     'kid_off_ramp' => $row['kid_off_ramp'] === '' ? null : $row['kid_off_ramp'],
-                ])->save();
+                ]);
+
+                /*
+                 * The count is the one field two things write. The household
+                 * types it here, and the planner spends and hands back portions
+                 * as nights are planned, re-rolled and removed (MM-6). So only a
+                 * count this form really changed is written: posting every row's
+                 * number back would undo whatever the planner did while the page
+                 * was open — on this page, on another phone, or in the re-pick a
+                 * removal on this very page set off.
+                 *
+                 * A count the household did type wins, because they are the ones
+                 * standing at the freezer.
+                 */
+                if ($this->countWasTyped($row)) {
+                    $item->portions_left = (int) $row['portions_left'];
+                }
+
+                $item->save();
 
                 $this->rows[$index]['id'] = (int) $item->getKey();
+                $this->rows[$index]['portions_left'] = (string) $item->portions_left;
+                $this->rows[$index]['counted'] = (string) $item->portions_left;
             }
         });
 
@@ -171,7 +190,7 @@ class Kitchen extends Component
 
         $this->status = $model->name.' is back in the stash, and the picker can plan it again.';
         $this->removing = null;
-        $this->loadStash();
+        $this->refreshStash();
     }
 
     /**
@@ -328,7 +347,7 @@ class Kitchen extends Component
     }
 
     /**
-     * @return array{id: null, name: string, portions_left: string, thaw_lead_time_hours: string, kid_off_ramp: string}
+     * @return array{id: null, name: string, portions_left: string, counted: string, thaw_lead_time_hours: string, kid_off_ramp: string}
      */
     protected function blankRow(): array
     {
@@ -336,6 +355,9 @@ class Kitchen extends Component
             'id' => null,
             'name' => '',
             'portions_left' => '0',
+            // Nothing is counted for a row that does not exist yet, so whatever
+            // is typed counts as typed.
+            'counted' => '',
             'thaw_lead_time_hours' => '24',
             'kid_off_ramp' => '',
         ];
@@ -350,14 +372,80 @@ class Kitchen extends Component
             ->inTheVault()
             ->orderBy('name')
             ->get()
-            ->map(fn (FreezerItem $item): array => [
-                'id' => (int) $item->getKey(),
-                'name' => $item->name,
-                'portions_left' => (string) $item->portions_left,
-                'thaw_lead_time_hours' => (string) $item->thaw_lead_time_hours,
-                'kid_off_ramp' => (string) $item->kid_off_ramp,
-            ])
+            ->map(fn (FreezerItem $item): array => $this->rowFor($item))
             ->all();
+    }
+
+    /**
+     * Bring the form back in step with the stash after something else has moved
+     * a count: a removal that re-picked a night, or a bring-back.
+     *
+     * A count the household has typed is kept — they typed it on purpose — and
+     * every other row shows what is really in the freezer, rather than the
+     * number that was there when the page was opened.
+     */
+    private function refreshStash(): void
+    {
+        $typed = collect($this->rows)
+            ->filter(fn (array $row): bool => ($row['id'] ?? null) !== null)
+            ->keyBy(fn (array $row) => $row['id']);
+
+        $rows = FreezerItem::query()
+            ->inTheVault()
+            ->orderBy('name')
+            ->get()
+            ->map(function (FreezerItem $item) use ($typed): array {
+                $row = $typed->get($item->getKey());
+
+                if ($row === null) {
+                    return $this->rowFor($item);
+                }
+
+                return [
+                    ...$row,
+                    'portions_left' => $this->countWasTyped($row)
+                        ? $row['portions_left']
+                        : (string) $item->portions_left,
+                    'counted' => (string) $item->portions_left,
+                ];
+            })
+            ->all();
+
+        // Rows nobody has saved yet belong to the household, not to the stash.
+        $unsaved = array_values(array_filter(
+            $this->rows,
+            fn (array $row): bool => ($row['id'] ?? null) === null,
+        ));
+
+        $this->rows = [...$rows, ...$unsaved];
+    }
+
+    /**
+     * @return array{id: int, name: string, portions_left: string, counted: string, thaw_lead_time_hours: string, kid_off_ramp: string}
+     */
+    private function rowFor(FreezerItem $item): array
+    {
+        return [
+            'id' => (int) $item->getKey(),
+            'name' => $item->name,
+            'portions_left' => (string) $item->portions_left,
+            // What the count was when this row was last in step with the
+            // database, so the save can tell a typed count from an untouched one.
+            'counted' => (string) $item->portions_left,
+            'thaw_lead_time_hours' => (string) $item->thaw_lead_time_hours,
+            'kid_off_ramp' => (string) $item->kid_off_ramp,
+        ];
+    }
+
+    /**
+     * Did the household change this row's count, rather than leave it as it was
+     * loaded?
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function countWasTyped(array $row): bool
+    {
+        return trim((string) ($row['portions_left'] ?? '')) !== trim((string) ($row['counted'] ?? ''));
     }
 
     /**
@@ -377,6 +465,10 @@ class Kitchen extends Component
         $this->forgetRow($id);
         $this->status = $status;
         unset($this->usage);
+
+        // Removing one item re-picks the nights that had it, which spends or
+        // hands back portions of the others.
+        $this->refreshStash();
     }
 
     private function tidyInput(): void

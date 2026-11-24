@@ -578,3 +578,133 @@ database.
 - "Did the kids eat it?" feedback, to improve the kid off-ramps.
 - Import recipes from links.
 - Cooking stats, for example "we haven't made chili in 6 weeks".
+
+## What MM-15 added (the edit screens)
+
+Everything AppPlan.md's "What information does the system need to track?" lists can
+now be added, changed and removed in the app, so MM-5's import file is a
+convenience rather than the only way in. The screens are:
+
+| Page | What it edits |
+|---|---|
+| `/recipes` | the vault: the list, and the only way out of it |
+| `/recipes/{recipe}/edit` | every recipe field, its ingredients, its prep steps, its bulk-pack tags |
+| `/recipes/bulk-ingredients` | the shared packs and each one's fridge life |
+| `/kitchen` | the recurring projects, and the freezer stash counts |
+| `/kitchen/projects/{project}/edit` | one project, what it yields, and what to buy for it |
+| `/kid-foods` | the kid off-ramp inventory |
+
+- **The navigation is one link per thing the household looks after,** which is how
+  AppPlan.md divides it: Plan, Recipes, Kitchen, Kid foods, Settings. The editors
+  underneath are reached from their list page rather than the nav, because nine tabs
+  do not fit on a phone. `navigation.blade.php` carries a `match` pattern per link so
+  the parent stays marked while you are in one of its editors.
+
+- **Removing a recipe or a freezer meal retires it; it does not delete it.**
+  This is the decision the ticket asked for, and it is forced by the schema:
+
+  - `meal_history.recipe_id` is `cascadeOnDelete`, so deleting a recipe destroys
+    every record of the household having cooked it — the only input MM-6's variety
+    weighting has. A delete would quietly change what the picker favours.
+  - `plan_nights.recipe_id` and `plan_nights.freezer_item_id` are `nullOnDelete`, so
+    a delete leaves a night claiming `selection = 'recipe'` with no recipe. MM-8,
+    MM-9 and MM-14 would each render that as a blank dinner.
+  - a planned freezer meal also holds a portion out of the stash
+    (`plan_nights.holds_freezer_portion`), so deleting the item leaves a reservation
+    pointing at nothing.
+
+  So `recipes.retired_at` and `freezer_items.retired_at` are what "remove" writes.
+  The row stays, every reference to it stays true, and `MealPool::fromVault()` — the
+  pool the picker draws from — reads `inTheVault()` only. Retiring is reversible from
+  the same page.
+
+  Deliberately **not** Laravel's `SoftDeletes`: a global scope would make
+  `$night->recipe` and `$entry->recipe` come back null, which is exactly the blank
+  dinner this avoids. The column is read through the `inTheVault` and `retired`
+  scopes (`App\Models\Concerns\Retirable`).
+
+- **What retiring does to a plan,** in `App\Vault\Retirement`, through `MealPlanner`
+  so the fences stay MM-6's:
+
+  - a night that **can still be changed is picked again**, so no night keeps a dinner
+    the household has just removed. If nothing else fits, MM-6's own rule applies and
+    the night keeps it with "Kept Chili: nothing else fits." — the shop for that
+    window was planned around this meal, so a dinner with an explanation beats an
+    empty night;
+  - a **locked** night keeps the meal. A lock is the household's answer for that date
+    (MM-6), and "we are making it one last time on Friday" is usually what retiring a
+    recipe mid-week means. The warning says so before and after;
+  - a night that has **gone by** is untouched, and a portion eaten on one is not
+    handed back. That is `PlanNight::hasPassed()`, the one definition of the fence;
+  - a freezer portion held by a **future** night goes back to the count. The portions
+    are still in the freezer; they are just not planned around any more, so a retired
+    item keeps its count.
+
+- **The row itself is deleted only when nothing points at it at all** — no history, no
+  plan night, and for a stash item no project restocking it. That makes the foreign
+  keys' damage impossible rather than merely warned about: a recipe typed by mistake
+  can be deleted, and one that has been cooked can only be retired. The refusal is
+  checked again on the action, so a page left open while the plan moved on cannot
+  destroy anything, and it writes nothing instead of silently retiring — the
+  household asked for the destructive one, and the safe one is offered rather than
+  done behind their back.
+
+- **The warning names what it touches,** in sentences, before anything is written:
+  which nights lose their dinner and which locked night keeps it, how many times the
+  recipe has been cooked and that the record survives, how many portions are still
+  counted, and which project will go on restocking a retired stash item.
+  `App\Vault\MealUsage` works that out from plain values, so the rules and the
+  wording are unit-tested with no database (AGENTS.md); it asks `MealPlanner` for the
+  current window rather than deriving one.
+
+- **The other three removals are plain deletes, and each says what it takes.** A bulk
+  ingredient takes its tag off the recipes and nothing else (the recipes keep every
+  field); a kitchen project takes its own ingredients, which are polymorphic and so
+  go in a model event, and leaves the portions it has already frozen counted; a kid
+  backup food just stops being added to the next list. Nothing on a plan points at
+  any of the three.
+
+- **The editors never touch the stored grocery list.** Editing a recipe's ingredients
+  or the kid off-ramp inventory makes the stored checklist stale, and MM-7 decided
+  that a read through `GroceryListBuilder::currentFor()` is what brings it up to date,
+  keeping every tick that still means something. A page that rebuilt the list on save
+  would rewrite the list somebody is holding in the shop.
+
+- **A save writes everything or nothing.** Each screen validates first and writes in
+  one transaction, as MM-4's settings page does — including the recipe's four stores
+  (the recipe, the bulk tags, the ingredients, the prep steps). Ingredient rows and
+  prep steps are rewritten wholesale rather than matched up one by one, because
+  nothing points at an ingredient row by id: MM-7 copies the amounts into
+  `plan_grocery_items` when it builds the list.
+
+- **Removing a row is not part of the save.** A row that has never been saved is just
+  dropped; a row that exists goes through its own confirmation and is removed on its
+  own, immediately, leaving the rest of what the household has typed alone. Editing
+  stays batched behind one save button, which is what makes bumping three freezer
+  counts one action.
+
+- **Prep steps are numbered by the order they are shown in,** which is the only order
+  the household has expressed. There is no drag handle: a step moves by being
+  retyped.
+
+- **New input bounds, all of them validation rather than household values:** an
+  ingredient amount is `decimal(8,2)` and is refused past two decimal places rather
+  than rounded silently; a prep step's lead time and a freezer item's thaw time stop
+  at 168 hours (a week — longer is a typo, not a reminder); a project's cadence stops
+  at 365 days; portions stop at 99, as MM-4's low-stash warning does. A bulk
+  ingredient's own fridge life keeps MM-4's 1–14 day bound, and may be left empty to
+  mean "use the `raw_split_fridge_life_days` setting".
+
+- **A project's "last done" is validated against today on the kitchen clock,** not the
+  server's. At 8pm in Toronto the server already says tomorrow, so `before_or_equal:today`
+  would refuse the household recording this evening's batch of soup.
+
+- **Store sections stay free text** (MM-3), and the editors suggest the ones already
+  in use through a `datalist`. Suggesting matters without constraining: "Dairy" and
+  "dairy " would be two headings on the grocery list.
+
+- **Still out:** MM-12 tops the stash up when a project is done, and should skip a
+  retired freezer item — a project pointing at one is kept on purpose, so bringing the
+  item back brings the loop back with it, and the warning says the project will go on
+  restocking it until the household changes it. MM-8's plan page is where a locked
+  night gets unlocked, which is what the locked-night warning sends the household to.

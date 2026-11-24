@@ -84,6 +84,8 @@
             @endforelse
 
             <x-form.error field="bulkIngredientIds" />
+            {{-- A tag that has gone missing is an error on the row, not on the list. --}}
+            <x-form.error field="bulkIngredientIds.*" />
         </x-settings-section>
 
         <x-settings-section

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Grocery\MergeKey;
 use Carbon\CarbonImmutable;
 use Database\Factories\PlanGroceryItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * One line of a plan's grocery checklist, and whether it has been ticked.
  *
  * @property string $name
+ * @property string $merge_key
  * @property array<int, string>|null $meals
  * @property float|null $quantity
  * @property string|null $unit
@@ -30,6 +32,10 @@ class PlanGroceryItem extends Model
     protected $fillable = [
         'plan_id',
         'name',
+        // The line's identity (MergeKey). Named here because GroceryLine::toRow()
+        // is the one place a line's columns are listed; booted() below is what
+        // guarantees the stored value, whoever does the writing.
+        'merge_key',
         'meals',
         'quantity',
         'unit',
@@ -38,6 +44,22 @@ class PlanGroceryItem extends Model
         'checked',
         'checked_at',
     ];
+
+    /**
+     * Keep the stored key the line's own identity, on every save (MM-23).
+     *
+     * The unique index on `(plan_id, merge_key)` is only worth as much as the key
+     * in the column, so the column is derived rather than supplied: a row cannot
+     * be stored under one name and keyed as another, whether it comes from a
+     * rebuild, a factory or a screen nobody has written yet. There is one notion
+     * of identity (MergeKey) and this is the only place it reaches the database.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $item): void {
+            $item->merge_key = MergeKey::stored(MergeKey::of($item->name, $item->unit));
+        });
+    }
 
     protected function casts(): array
     {

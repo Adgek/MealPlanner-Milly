@@ -107,6 +107,17 @@ final class GroceryLine
     }
 
     /**
+     * The same identity, in the form the row stores it (MM-23).
+     *
+     * `plan_grocery_items` is unique on `(plan_id, merge_key)`, so this is what
+     * stops one thing becoming two rows and two checkboxes.
+     */
+    public function storedKey(): string
+    {
+        return MergeKey::stored($this->mergeKey());
+    }
+
+    /**
      * The same line, read in a different part of the store.
      *
      * For the one case that needs it: two measures of one ingredient belong under
@@ -229,12 +240,18 @@ final class GroceryLine
      * line on the next rebuild — which would stamp the plan and have MM-8 warn
      * the household about a list that is identical.
      *
+     * These are the columns a line owns, and the only ones a rebuild writes: the
+     * tick is the household's, and `created_at` says when the line first appeared
+     * (MM-23).
+     *
      * @return array<string, mixed>
      */
     public function toRow(): array
     {
         return [
             'name' => $this->name,
+            // The line's identity, stored so the database can hold it to one row.
+            'merge_key' => $this->storedKey(),
             'meals' => $this->meals,
             'quantity' => $this->quantity === null ? null : round($this->quantity, 2),
             'unit' => $this->unit,

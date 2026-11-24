@@ -206,9 +206,11 @@ final class GroceryListBuilder
 
                 // Only a line that really reads differently counts as a change:
                 // the stamp has to mean "the list moved", not "somebody looked".
+                // A key being put right is not the list moving either — nothing
+                // the household reads changed (MM-23).
                 $amended = $amended || array_diff(
                     array_keys($row->getDirty()),
-                    ['checked', 'checked_at'],
+                    ['checked', 'checked_at', 'merge_key'],
                 ) !== [];
 
                 $row->save();

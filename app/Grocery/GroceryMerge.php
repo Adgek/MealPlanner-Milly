@@ -45,7 +45,7 @@ final class GroceryMerge
                 : GroceryLine::from($need);
         }
 
-        return $this->group(array_values($lines));
+        return $this->group($this->keepNamesTogether(array_values($lines)));
     }
 
     /**
@@ -59,5 +59,39 @@ final class GroceryMerge
     public function group(array $lines): GroceryList
     {
         return GroceryList::of($lines, $this->order);
+    }
+
+    /**
+     * Two measures of one ingredient, read under one heading.
+     *
+     * A pound of beef and 500 g of beef stay two lines, because nothing here
+     * converts between units — but they are one thing to buy, so every line for a
+     * name takes the first real store section any of them gave.
+     *
+     * This is what the kid off-ramp needs most. The inventory is stocked in packs
+     * — a bag of nuggets, a loaf of bread — and no recipe measures tortillas in
+     * bags, so a kid backup food usually *cannot* merge into the recipe line that
+     * wants the same item. Left in its own section it would be the same thing
+     * written twice, two sections apart: bought twice, and ticked once.
+     *
+     * @param  array<int, GroceryLine>  $lines
+     * @return array<int, GroceryLine>
+     */
+    private function keepNamesTogether(array $lines): array
+    {
+        $sections = [];
+
+        foreach ($lines as $line) {
+            if ($line->section !== GrocerySection::UNSECTIONED) {
+                $sections[MergeKey::normalise($line->name)] ??= $line->section;
+            }
+        }
+
+        return array_map(
+            fn (GroceryLine $line) => $line->inSection(
+                $sections[MergeKey::normalise($line->name)] ?? $line->section,
+            ),
+            $lines,
+        );
     }
 }

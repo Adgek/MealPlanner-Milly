@@ -113,9 +113,10 @@ it('always adds the kid backup foods, whatever is for dinner', function () {
         ->and($list->lineFor('Chicken nuggets', 'bag')->amount())->toBe('1 bag');
 });
 
-it('merges a kid backup food into the recipe line that also wants it', function () {
+it('merges a kid backup food into a recipe line that measures it the same way', function () {
     // The kid foods go on last on purpose, so a recipe's store section and
-    // spelling win and the line reads as one thing to buy.
+    // spelling win and the line reads as one thing to buy. This only happens when
+    // the two agree on the unit, which is the narrow case.
     $kidFoods = [
         new IngredientNeed(
             name: 'tortillas',
@@ -167,4 +168,64 @@ it('names the recipes whose ingredients the shop needs', function () {
     ]);
 
     expect($ids)->toBe([1]);
+});
+
+it('keeps a kid backup food beside the recipe line it cannot merge with', function () {
+    // The off-ramp is stocked in packs — a bag, a loaf, a box — and no recipe
+    // measures tortillas in bags. Nothing here converts one into the other, so
+    // there are two lines; what matters is that they are in the same section,
+    // read together, instead of two lines in two places the household buys twice.
+    $kidFoods = [
+        new IngredientNeed(
+            name: 'Tortillas',
+            quantity: 1,
+            unit: 'bag',
+            storeSection: IngredientNeed::KID_BACKUP,
+            meal: IngredientNeed::KID_BACKUP,
+        ),
+    ];
+
+    $list = (new GroceryMerge)->merge(theBasketFor([
+        Pick::recipe(aNight('2026-01-12'), aRecipe(2, name: 'White Boy Tacos')),
+    ], $kidFoods));
+
+    expect($list->sectionNames())->toBe(['Dry goods', 'Meat'])
+        ->and($list->lineFor('Tortillas', 'count')->amount())->toBe('8 count')
+        ->and($list->lineFor('Tortillas', 'bag')->amount())->toBe('1 bag')
+        ->and($list->lineFor('Tortillas', 'bag')->section)->toBe('Dry goods')
+        ->and($list->lineFor('Tortillas', 'bag')->meals)->toBe([IngredientNeed::KID_BACKUP]);
+});
+
+it('keeps a kid backup food nobody measured beside the same line', function () {
+    // kid_backup_foods.quantity and .unit are both nullable, so this is the other
+    // shape the inventory really comes in.
+    $kidFoods = [
+        new IngredientNeed(
+            name: 'Tortillas',
+            storeSection: IngredientNeed::KID_BACKUP,
+            meal: IngredientNeed::KID_BACKUP,
+        ),
+    ];
+
+    $list = (new GroceryMerge)->merge(theBasketFor([
+        Pick::recipe(aNight('2026-01-12'), aRecipe(2, name: 'White Boy Tacos')),
+    ], $kidFoods));
+
+    expect($list->sectionNames())->toBe(['Dry goods', 'Meat'])
+        ->and($list->count())->toBe(3)
+        ->and($list->lineFor('Tortillas')->section)->toBe('Dry goods')
+        ->and($list->lineFor('Tortillas')->meals)->toBe([IngredientNeed::KID_BACKUP]);
+});
+
+it('keeps two measures of one ingredient together, wherever they came from', function () {
+    // The same rule, with no kid food in sight: a pound of beef and 500 g of beef
+    // are two lines because nothing converts, but they are one thing to buy and
+    // belong under one heading.
+    $list = (new GroceryMerge)->merge([
+        aNeed('Ground beef', 1, 'lb', 'Meat', meal: 'Chili'),
+        aNeed('Ground beef', 500, 'g', 'Butcher', meal: 'Beef Bulgogi'),
+    ]);
+
+    expect($list->sectionNames())->toBe(['Meat'])
+        ->and($list->lineFor('Ground beef', 'g')->section)->toBe('Meat');
 });

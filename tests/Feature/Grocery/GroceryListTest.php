@@ -129,6 +129,28 @@ it('adds nothing for a freezer night', function () {
         ->and($list->lineFor('Ground beef', 'lb')->meals)->toBe(['Chili']);
 });
 
+it('keeps an off-ramp pack beside the recipe line that wants the same thing', function () {
+    // The inventory is stocked in packs, which is what KidBackupFoodFactory and
+    // the example seeder produce: a bag, a loaf, a box. No recipe measures
+    // tortillas in bags, so these two lines cannot be added together — they just
+    // have to be read together, or the household buys tortillas twice.
+    KidBackupFood::factory()->create(['name' => 'Tortillas', 'quantity' => 1, 'unit' => 'bag']);
+
+    $plan = aPlannedWindowOf(aRecipeThatNeeds('White Boy Tacos', [
+        ['Tortillas', 8, 'count', 'Dry goods'],
+    ]));
+
+    $list = (new GroceryListBuilder)->listFor($plan);
+
+    expect($list->sectionNames())->toBe(['Dry goods'])
+        ->and($list->count())->toBe(2)
+        ->and($list->lineFor('Tortillas', 'count')->amount())->toBe('8 count')
+        ->and($list->lineFor('Tortillas', 'bag')->amount())->toBe('1 bag')
+        ->and($list->lineFor('Tortillas', 'bag')->meals)->toBe([IngredientNeed::KID_BACKUP])
+        // Stored that way too, so MM-8 renders them under one heading.
+        ->and(PlanGroceryItem::query()->where('unit', 'bag')->first()->store_section)->toBe('Dry goods');
+});
+
 it('puts the pantry basics in the short section at the end', function () {
     $plan = aPlannedWindowOf(aRecipeThatNeeds('Chili', [
         ['Ground beef', 1, 'lb', 'Meat'],

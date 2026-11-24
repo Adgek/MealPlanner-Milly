@@ -107,6 +107,31 @@ final class GroceryLine
     }
 
     /**
+     * The same line, read in a different part of the store.
+     *
+     * For the one case that needs it: two measures of one ingredient belong under
+     * one heading, even though they cannot be added together (GroceryMerge).
+     */
+    public function inSection(string $section): self
+    {
+        if ($section === $this->section) {
+            return $this;
+        }
+
+        return new self(
+            name: $this->name,
+            quantity: $this->quantity,
+            unit: $this->unit,
+            section: $section,
+            pantryBasic: $this->pantryBasic,
+            meals: $this->meals,
+            id: $this->id,
+            checked: $this->checked,
+            checkedAt: $this->checkedAt,
+        );
+    }
+
+    /**
      * How much to buy, as the list reads it: "2 lb", "3", "splash", or nothing at
      * all when nobody said.
      */

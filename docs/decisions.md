@@ -422,10 +422,25 @@ database.
 
 - **The kid backup foods go on every list,** whatever is cooking, because that is
   what the off-ramp is (AppPlan.md, section 3). They are added last, so one a
-  recipe also asks for merges into that recipe's line and keeps its real section;
-  the rest group under **`Kid backup`**, since `kid_backup_foods` has no store
-  section of its own. The pantry basics are the **`Check you have`** section, and
-  anything with no section at all lands in **`Other`**, last of the shopping.
+  recipe measures the same way merges into that recipe's line and keeps its real
+  section. Usually it can't: the off-ramp is stocked in packs — a bag of nuggets,
+  a loaf of bread — and no recipe measures tortillas in bags, while
+  `kid_backup_foods.quantity` and `.unit` are both nullable anyway. So the honest
+  answer is **two lines that are read together**: every line for one ingredient
+  takes the first real store section any of them gave, so a bag of tortillas sits
+  next to the eight the tacos want instead of two sections away, where the
+  household buys both and ticks one. The same rule covers a pound of beef beside
+  500 g of beef, which is the same situation without a kid in it. A kid food
+  nothing else wants groups under **`Kid backup`**, since the inventory has no
+  store section of its own. The pantry basics are the **`Check you have`**
+  section, and anything with no section at all lands in **`Other`**, last of the
+  shopping.
+
+- **An aisle is one section however it was typed.** Sections are free text a
+  person writes on a recipe, so "Produce" and "produce" are one trip round the
+  store and get one heading, with the first spelling the one the household reads —
+  the same normalising a line's own name gets. Two headings a few lines apart is
+  how the lettuce gets crossed off and the onion under the second one never seen.
 
 - **The order of the sections is a household value, not a sort in code.**
   `store_section_order` is a new setting: the section names in the order they walk

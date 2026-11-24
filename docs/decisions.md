@@ -415,10 +415,12 @@ database.
     point (AppPlan.md);
   - **a need with no amount still merges, and adds nothing to the number.** Both
     the amount and the unit are optional on an ingredient, for the things nobody
-    measures ("a splash of soy"). A line nobody measured shows no amount at all
-    rather than a number the app made up. The trade-off is a line that mixes the
-    two can understate; the meals it lists are the check, and the household is
-    looking in the fridge anyway;
+    measures. A line nobody measured shows **no amount at all** rather than a
+    number the app made up — and not the bare unit either, because "Ground beef —
+    lb" is not a thing to write on a list. A household that wants "a splash of
+    soy" on the list says so in the ingredient's name, where it is a name and not
+    arithmetic. The trade-off is a line that mixes a measured and an unmeasured
+    need understates, so the tick rule below watches for it;
   - **the first spelling and the first real store section win,** so the earliest
     night of the window decides how a line reads. Two recipes that disagree about
     the aisle still make one line: merging the amount matters more than the aisle,

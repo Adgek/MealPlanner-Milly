@@ -132,13 +132,19 @@ final class GroceryLine
     }
 
     /**
-     * How much to buy, as the list reads it: "2 lb", "3", "splash", or nothing at
-     * all when nobody said.
+     * How much to buy, as the list reads it: "2 lb", "3", or nothing at all when
+     * nobody said how much.
+     *
+     * A unit on its own is not an amount. "Ground beef — lb" is not a thing to
+     * write on a list, and it is what a measure with no number would otherwise
+     * read as — in MM-9's post to the household chat as well. A household that
+     * wants "a splash of soy" on the list can say so in the ingredient's name,
+     * where it is a name and not arithmetic.
      */
     public function amount(): ?string
     {
         if ($this->quantity === null) {
-            return $this->unit;
+            return null;
         }
 
         return trim(self::number($this->quantity).' '.(string) $this->unit);

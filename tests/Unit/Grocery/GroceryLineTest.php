@@ -56,3 +56,20 @@ it('does not ask for more when the same dinner merely got specific', function ()
 it('does not ask for more when the amount stops being given', function () {
     expect(aLine(null, meals: ['Chili', 'White Boy Tacos'])->asksForMoreThan(aLine(1.0)))->toBeFalse();
 });
+
+it('says nothing about an amount nobody gave, unit or no unit', function () {
+    // "Ground beef — lb" is what a unit with no amount used to read as, and MM-9
+    // would have posted it to the household chat.
+    $withUnit = aLine(null, 'lb');
+    $withoutUnit = aLine(null, null);
+
+    expect($withUnit->amount())->toBeNull()
+        ->and($withUnit->describe())->toBe('Ground beef')
+        ->and($withoutUnit->amount())->toBeNull()
+        ->and($withoutUnit->describe())->toBe('Ground beef');
+});
+
+it('writes an amount with its unit when there is one', function () {
+    expect(aLine(2.0, 'lb')->describe())->toBe('Ground beef — 2 lb')
+        ->and(aLine(2.0, null)->describe())->toBe('Ground beef — 2');
+});

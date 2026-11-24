@@ -18,6 +18,9 @@ class PlanGroceryItemFactory extends Factory
         return [
             'plan_id' => Plan::factory(),
             'name' => fake()->words(2, true),
+            // Which dinners want it: null until something says, because a line
+            // written by hand (or by a factory) is not part of a window's plan.
+            'meals' => null,
             'quantity' => fake()->randomElement([1, 2, 1.5]),
             'unit' => fake()->randomElement(['lb', 'g', 'can', 'bunch']),
             'store_section' => fake()->randomElement(['Produce', 'Meat', 'Dairy', 'Dry goods']),
@@ -41,5 +44,13 @@ class PlanGroceryItemFactory extends Factory
             'pantry_basic' => true,
             'store_section' => 'Pantry',
         ]);
+    }
+
+    /**
+     * The meals of the window this line is for.
+     */
+    public function forMeals(string ...$meals): static
+    {
+        return $this->state(['meals' => array_values($meals)]);
     }
 }

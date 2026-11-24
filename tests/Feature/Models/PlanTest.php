@@ -9,6 +9,7 @@ use App\Models\PlanGroceryItem;
 use App\Models\PlanNight;
 use App\Models\Recipe;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
 
 /*
  * A plan is one shopping window: the shop, the nights it covers, and the grocery
@@ -176,6 +177,29 @@ it('does not overwrite a tick when the other phone ticks it again', function () 
 
     expect($item->check())->toBeFalse()
         ->and($item->refresh()->checked_at->eq($firstTick))->toBeTrue();
+});
+
+it('settles two phones ticking at once in the database', function () {
+    // The real race, which the one above does not reach: both partners opened the
+    // page while the line was unticked, so each holds a row that says `checked =
+    // false`. Reading that from the instance in hand would let the second write
+    // through and move the timestamp; the guard has to be the update itself.
+    $item = PlanGroceryItem::factory()->create();
+    $onePhone = PlanGroceryItem::query()->findOrFail($item->getKey());
+    $theOther = PlanGroceryItem::query()->findOrFail($item->getKey());
+
+    Carbon::setTestNow(Carbon::parse('2026-01-11 10:15:00', 'America/Toronto'));
+    expect($onePhone->check())->toBeTrue();
+
+    Carbon::setTestNow(Carbon::parse('2026-01-11 10:15:04', 'America/Toronto'));
+    expect($theOther->check())->toBeFalse();
+
+    expect($item->refresh()->checked)->toBeTrue()
+        ->and($item->checked_at->format('H:i:s'))->toBe('15:15:00')
+        // The phone that lost sees the tick that won, not the one it tried to make.
+        ->and($theOther->checked_at->eq($item->checked_at))->toBeTrue();
+
+    Carbon::setTestNow();
 });
 
 it('puts a grocery line back on the list', function () {

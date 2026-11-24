@@ -48,6 +48,8 @@ class HouseholdSettings
 
     public const KEY_FREEZER_MEALS_ON_CHAOS_NIGHTS_ONLY = 'freezer_meals_on_chaos_nights_only';
 
+    public const KEY_STORE_SECTION_ORDER = 'store_section_order';
+
     /**
      * The starting settings from docs/decisions.md, with their defaults.
      *
@@ -115,6 +117,12 @@ class HouseholdSettings
             // portion is only spent on a 15-minute night. Turn this off to let a
             // freezer meal come up on any night.
             self::KEY_FREEZER_MEALS_ON_CHAOS_NIGHTS_ONLY => true,
+
+            // The order the grocery list's sections come out in (MM-7): the
+            // household's own walk round their store, as a list of section names.
+            // Empty to begin with, because nobody can guess a store's layout —
+            // then the list is alphabetical, with the odds and ends last.
+            self::KEY_STORE_SECTION_ORDER => [],
         ];
     }
 
@@ -280,6 +288,25 @@ class HouseholdSettings
     public static function freezerMealsOnChaosNightsOnly(): bool
     {
         return (bool) self::get(self::KEY_FREEZER_MEALS_ON_CHAOS_NIGHTS_ONLY);
+    }
+
+    /**
+     * The store sections in the order the household walks them, for the grocery
+     * list (MM-7).
+     *
+     * Anything not named here follows what is, alphabetically. Blanks are dropped
+     * rather than becoming a section nothing matches.
+     *
+     * @return array<int, string>
+     */
+    public static function storeSectionOrder(): array
+    {
+        $sections = array_map(
+            fn ($name) => is_string($name) ? trim($name) : '',
+            (array) self::get(self::KEY_STORE_SECTION_ORDER),
+        );
+
+        return array_values(array_filter($sections, fn (string $name) => $name !== ''));
     }
 
     /**

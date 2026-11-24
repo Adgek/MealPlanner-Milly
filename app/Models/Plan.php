@@ -2,8 +2,13 @@
 
 namespace App\Models;
 
+use App\Enums\Weekday;
+use App\Planning\CalendarDate;
+use App\Planning\ShoppingWindow;
+use App\Settings\HouseholdSettings;
 use Carbon\CarbonImmutable;
 use Database\Factories\PlanFactory;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable $shopping_date
  * @property CarbonImmutable $first_night
  * @property CarbonImmutable $last_night
+ * @property CarbonImmutable|null $grocery_list_changed_at
  *
  * @method static PlanFactory factory($count = null, $state = [])
  */
@@ -26,6 +32,7 @@ class Plan extends Model
         'shopping_date',
         'first_night',
         'last_night',
+        'grocery_list_changed_at',
     ];
 
     protected function casts(): array
@@ -36,6 +43,9 @@ class Plan extends Model
             'shopping_date' => 'immutable_date',
             'first_night' => 'immutable_date',
             'last_night' => 'immutable_date',
+            // An instant rather than a date: it answers "when did the grocery
+            // list change", which is compared against the moment of the shop.
+            'grocery_list_changed_at' => 'immutable_datetime',
         ];
     }
 
@@ -80,5 +90,92 @@ class Plan extends Model
     public function groceryItems(): HasMany
     {
         return $this->hasMany(PlanGroceryItem::class);
+    }
+
+    /**
+     * The window this plan was built for, as the planner describes one.
+     *
+     * Read off the stored dates rather than derived from the shopping days as
+     * they stand now: a plan already out keeps the nights it was built for, which
+     * is why MM-6 stores them at all (docs/decisions.md).
+     */
+    public function window(): ShoppingWindow
+    {
+        return new ShoppingWindow($this->shopping_date, $this->first_night, $this->last_night);
+    }
+
+    /**
+     * Has every night of this window gone by?
+     *
+     * Then the plan is history and nothing about it can change any more, because
+     * the planner refuses to touch a night that has passed
+     * (PlanNight::hasPassed()). MM-7 reads this to leave a finished window's
+     * grocery list exactly as it was shopped.
+     */
+    public function hasPassed(): bool
+    {
+        return CalendarDate::hasPassed($this->last_night, HouseholdSettings::timeZone());
+    }
+
+    /**
+     * Has the grocery list ever been made for this plan?
+     */
+    public function hasGroceryList(): bool
+    {
+        return $this->grocery_list_changed_at !== null;
+    }
+
+    /**
+     * The moment the shop happens: this plan's shopping date at the household's
+     * time for that weekday, on the kitchen clock.
+     *
+     * Null when the household no longer shops on that weekday — the shopping days
+     * are a setting they can change (MM-4), and a plan keeps the date it was made
+     * for. A caller that cannot place the shop in time should say nothing rather
+     * than invent a time.
+     */
+    public function shoppingMoment(): ?CarbonImmutable
+    {
+        $weekday = Weekday::fromDate($this->shopping_date);
+
+        foreach (HouseholdSettings::shoppingTimes() as $shop) {
+            if ($shop['weekday'] === $weekday) {
+                return HouseholdSettings::at($shop['time'], $this->shopping_date)->toImmutable();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Did the grocery list change after the household had already shopped?
+     *
+     * The warning MM-8 owes the fridge: the list somebody carried round the shop
+     * is no longer the list the plan asks for. False when the list has never been
+     * made, and false when the shop cannot be placed in time, because "we can't
+     * tell" is not "it changed".
+     */
+    public function groceryListChangedAfterShopping(): bool
+    {
+        $shop = $this->shoppingMoment();
+
+        return $shop !== null
+            && $this->grocery_list_changed_at !== null
+            && $this->grocery_list_changed_at->greaterThan($shop);
+    }
+
+    /**
+     * Record that the grocery list changed, now or at a given moment.
+     *
+     * Only a rebuild that really moved a line calls this, so the stamp means "the
+     * list changed then" rather than "somebody looked at it then".
+     */
+    public function recordGroceryListChange(?DateTimeInterface $at = null): void
+    {
+        $this->grocery_list_changed_at = $at === null
+            ? CarbonImmutable::now()
+            : CarbonImmutable::instance($at);
+
+        $this->save();
     }
 }

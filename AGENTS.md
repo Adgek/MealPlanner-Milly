@@ -25,7 +25,7 @@ So: no `if ($day === 'Sunday')` and no `const DINNER_TIME = '18:00'`. Read the
 setting. If a value has no home in Settings yet, add one rather than hard-coding it.
 
 The one exception is bootstrap configuration the app needs before it can read a
-setting — `APP_TIMEZONE`, the database connection. That lives in `.env`.
+setting — `HOUSEHOLD_TIMEZONE`, the database connection. That lives in `.env`.
 
 ## Planning logic has unit tests
 

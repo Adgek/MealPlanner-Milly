@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * One line of a plan's grocery checklist, and whether it has been ticked.
  *
  * @property string $name
+ * @property array<int, string>|null $meals
  * @property float|null $quantity
  * @property string|null $unit
  * @property string|null $store_section
@@ -29,6 +30,7 @@ class PlanGroceryItem extends Model
     protected $fillable = [
         'plan_id',
         'name',
+        'meals',
         'quantity',
         'unit',
         'store_section',
@@ -40,6 +42,10 @@ class PlanGroceryItem extends Model
     protected function casts(): array
     {
         return [
+            // The meals of the window that want this line, in night order. Stored
+            // with the line rather than read off the plan, so the list can say
+            // why an item is on it without the plan behind it (MM-7).
+            'meals' => 'array',
             'quantity' => 'float',
             'pantry_basic' => 'boolean',
             'checked' => 'boolean',
@@ -49,19 +55,35 @@ class PlanGroceryItem extends Model
     }
 
     /**
-     * Tick the line off, recording when. Idempotent, so two phones racing at the
-     * fridge cannot overwrite each other's timestamp (MM-8).
+     * Tick the line off, recording when, and say whether this call is the one that
+     * did it.
+     *
+     * The first tick wins, and the database is what decides — not the row in
+     * memory. Both partners open the list while a line is unticked, so each holds
+     * a model that says `checked = false`; a guard read off the instance would let
+     * them both write, and the second would move the timestamp. The condition is
+     * part of the update instead, so only one of the two can match a row (MM-8).
+     *
+     * The loser is refreshed, so the phone that lost shows the tick that won.
      */
     public function check(): bool
     {
-        if ($this->checked) {
+        $at = now();
+
+        $ticked = $this->newQueryWithoutScopes()
+            ->whereKey($this->getKey())
+            ->where('checked', false)
+            ->update(['checked' => true, 'checked_at' => $at]) === 1;
+
+        if (! $ticked) {
+            $this->refresh();
+
             return false;
         }
 
-        return $this->forceFill([
-            'checked' => true,
-            'checked_at' => now(),
-        ])->save();
+        $this->forceFill(['checked' => true, 'checked_at' => $at])->syncOriginal();
+
+        return true;
     }
 
     /**

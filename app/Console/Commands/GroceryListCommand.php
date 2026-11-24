@@ -57,7 +57,8 @@ class GroceryListCommand extends Command
 
         // A list nobody has ever made is not a list somebody is holding, so
         // making it now cannot overwrite anything.
-        $update = $this->option('rebuild') || ! $plan->hasGroceryList()
+        $firstMake = ! $plan->hasGroceryList();
+        $update = $this->option('rebuild') || $firstMake
             ? $groceries->rebuild($plan)
             : null;
 
@@ -67,7 +68,7 @@ class GroceryListCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->show($plan->refresh(), $groceries->listFor($plan), $update);
+        $this->show($plan->refresh(), $groceries->listFor($plan), $update, $firstMake);
 
         return self::SUCCESS;
     }
@@ -81,7 +82,7 @@ class GroceryListCommand extends Command
             : $planner->windowFor(CalendarDate::parse((string) $date));
     }
 
-    private function show(Plan $plan, GroceryList $list, ?GroceryListUpdate $update): void
+    private function show(Plan $plan, GroceryList $list, ?GroceryListUpdate $update, bool $firstMake): void
     {
         $window = $plan->window();
 
@@ -112,7 +113,7 @@ class GroceryListCommand extends Command
             }
         }
 
-        $this->footer($plan, $list, $update);
+        $this->footer($plan, $list, $update, $firstMake);
     }
 
     /**
@@ -130,7 +131,7 @@ class GroceryListCommand extends Command
         );
     }
 
-    private function footer(Plan $plan, GroceryList $list, ?GroceryListUpdate $update): void
+    private function footer(Plan $plan, GroceryList $list, ?GroceryListUpdate $update, bool $firstMake): void
     {
         $this->newLine();
         $this->line(sprintf(
@@ -146,7 +147,9 @@ class GroceryListCommand extends Command
             ),
         ));
 
-        if ($update !== null) {
+        // Naming every line of a list that did not exist a moment ago is not
+        // news; being told the window is over and the list was left alone is.
+        if ($update !== null && (! $firstMake || $update->leftAlone !== null)) {
             $this->line('  <comment>'.$update->summary().'</comment>');
         }
 

@@ -13,6 +13,11 @@ namespace App\Grocery;
 final class GroceryListUpdate
 {
     /**
+     * How many lines a summary names before it starts counting them instead.
+     */
+    private const NAMED_AT_MOST = 4;
+
+    /**
      * @param  array<int, GroceryLine>  $added  lines that were not on the list before
      * @param  array<int, GroceryLine>  $removed  lines nothing in the window wants any more, as they last read
      * @param  array<int, GroceryLine>  $unticked  lines whose tick stopped being true, because the plan now asks for more
@@ -87,13 +92,22 @@ final class GroceryListUpdate
     }
 
     /**
+     * Lines named, up to as many as somebody reads before giving up.
+     *
+     * A first build moves every line there is, and twenty-five of them spelled out
+     * in a chat message is not a summary.
+     *
      * @param  array<int, GroceryLine>  $lines
      */
     private static function phrase(array $lines, string $what): string
     {
+        $named = array_slice($lines, 0, self::NAMED_AT_MOST);
+        $rest = count($lines) - count($named);
+
         return sprintf(
-            '%s %s',
-            implode(', ', array_map(fn (GroceryLine $line) => $line->describe(), $lines)),
+            '%s%s %s',
+            implode(', ', array_map(fn (GroceryLine $line) => $line->describe(), $named)),
+            $rest > 0 ? sprintf(' and %d more', $rest) : '',
             $what,
         );
     }

@@ -122,9 +122,10 @@ it('opens with the settings the household is running on', function () {
         ->assertSet('rawSplitFridgeLifeDays', '2')
         ->assertSet('lowFreezerStashPortions', '2')
         ->assertSet('prepBlock', ['weekday' => 'monday', 'start' => '20:00', 'end' => '21:00'])
+        // Weekday order, Monday first, however the trips are stored (MM-16).
         ->assertSet('shoppingTimes', [
-            ['weekday' => 'sunday', 'time' => '10:00'],
             ['weekday' => 'wednesday', 'time' => '17:30'],
+            ['weekday' => 'sunday', 'time' => '10:00'],
         ])
         ->assertSet('schedule.thursday', ['cook' => 'partner', 'time_budget' => '15_min_chaos'])
         ->assertSet('schedule.monday', ['cook' => 'together', 'time_budget' => '30_min_workhorse']);
@@ -193,11 +194,13 @@ it('saves every setting on the page', function () {
             'end' => '20:30',
         ]);
 
+    // Saved as the form had them, Saturday then Tuesday, and read back in
+    // weekday order (MM-16).
     $windows = HouseholdSettings::shoppingTimes();
 
     expect($windows)->toHaveCount(2)
-        ->and($windows[0])->toBe(['weekday' => Weekday::Saturday, 'time' => '09:00'])
-        ->and($windows[1])->toBe(['weekday' => Weekday::Tuesday, 'time' => '18:15']);
+        ->and($windows[0])->toBe(['weekday' => Weekday::Tuesday, 'time' => '18:15'])
+        ->and($windows[1])->toBe(['weekday' => Weekday::Saturday, 'time' => '09:00']);
 });
 
 it('saves the week as the seven rows the plan copies from', function () {
@@ -233,9 +236,11 @@ it('stores a typed time in the format the rest of the app reads', function () {
         'shoppingTimes.0.time' => ' 8:05 ',
     ])->call('save')->assertHasNoErrors();
 
+    // Form row zero is the Saturday trip, and the trips come back in weekday
+    // order, so Saturday follows Tuesday.
     expect(HouseholdSettings::dinnerTime())->toBe('09:00')
         ->and(HouseholdSettings::planPostTime())->toBe('17:30')
-        ->and(HouseholdSettings::shoppingTimes()[0]['time'])->toBe('08:05');
+        ->and(HouseholdSettings::shoppingTimes()[1])->toBe(['weekday' => Weekday::Saturday, 'time' => '08:05']);
 });
 
 it('trims the cooks’ names', function () {
@@ -281,14 +286,24 @@ it('adds a shopping day on the first free weekday', function () {
     $this->seed(HouseholdDefaultsSeeder::class);
 
     Livewire::test(Settings::class)
-        // Starts on Sunday and Wednesday.
+        // Starts on Wednesday and Sunday: the defaults, in weekday order.
         ->call('addShoppingTime')
         ->assertCount('shoppingTimes', 3)
+        // The new row appears at the bottom of the form, where the household
+        // just pressed the button — rows do not reshuffle under a thumb.
         ->assertSet('shoppingTimes.2.weekday', 'monday')
+        // The summary beside them reads as the week does, all the same (MM-16).
+        ->assertSee('Monday 10:00 am · Wednesday 5:30 pm · Sunday 10:00 am')
         ->call('save')
         ->assertHasNoErrors();
 
-    expect(HouseholdSettings::shoppingTimes())->toHaveCount(3);
+    // And it is in weekday order for everyone who reads the setting, though it
+    // was saved with Monday last.
+    expect(HouseholdSettings::shoppingTimes())->toBe([
+        ['weekday' => Weekday::Monday, 'time' => '10:00'],
+        ['weekday' => Weekday::Wednesday, 'time' => '17:30'],
+        ['weekday' => Weekday::Sunday, 'time' => '10:00'],
+    ]);
 });
 
 it('never offers more shopping days than there are days', function () {
@@ -305,17 +320,18 @@ it('removes a shopping day', function () {
     $this->seed(HouseholdDefaultsSeeder::class);
 
     Livewire::test(Settings::class)
+        // Row zero is Wednesday, the first of the two in weekday order.
         ->call('removeShoppingTime', 0)
         ->assertCount('shoppingTimes', 1)
         // The rows close up, so the remaining one is row zero.
-        ->assertSet('shoppingTimes.0.weekday', 'wednesday')
+        ->assertSet('shoppingTimes.0.weekday', 'sunday')
         ->call('save')
         ->assertHasNoErrors();
 
     $windows = HouseholdSettings::shoppingTimes();
 
     expect($windows)->toHaveCount(1)
-        ->and($windows[0]['weekday'])->toBe(Weekday::Wednesday);
+        ->and($windows[0]['weekday'])->toBe(Weekday::Sunday);
 });
 
 /*
@@ -480,7 +496,10 @@ it('writes no setting at all when one field is wrong', function () {
         ->and(HouseholdSettings::timeZone())->toBe('America/Toronto')
         ->and(HouseholdSettings::cookNames())->toBe(['me' => 'Me', 'partner' => 'Partner'])
         ->and(HouseholdSettings::rawSplitFridgeLifeDays())->toBe(2)
-        ->and(HouseholdSettings::shoppingTimes()[0]['weekday'])->toBe(Weekday::Sunday)
+        ->and(HouseholdSettings::shoppingTimes())->toBe([
+            ['weekday' => Weekday::Wednesday, 'time' => '17:30'],
+            ['weekday' => Weekday::Sunday, 'time' => '10:00'],
+        ])
         ->and(CookScheduleNight::forWeekday(Weekday::Monday)->cook)->toBe(CookAssignment::Together);
 });
 

@@ -193,6 +193,18 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
   There is **no weekday name anywhere in the picker.** Change the setting to Tuesday
   and Friday and the windows follow.
 
+- **The shopping days come back in weekday order, Monday first (MM-16).**
+  `HouseholdSettings::shoppingTimes()` sorts by `Weekday::isoNumber()`, the same
+  order `CookScheduleNight::week()` comes back in, so the app has one notion of
+  week order. The order is settled on **read**, not on save: the Settings page
+  appends a new trip where the household added it, and the rows already stored are
+  unsorted — the starting defaults themselves are stored Sunday-then-Wednesday —
+  so reading in order fixes what is in the database today and the stored shape,
+  a list of `['weekday' => ..., 'time' => ...]`, needed no migration. Readers can
+  rely on it rather than re-sorting: MM-6 derives each window from this list, MM-9
+  and MM-13 "the evening before the shop". `ShoppingCalendar` still sorts the ISO
+  day numbers it is constructed with, because a caller can hand it any list.
+
 - **One night has one dinner, across every plan there is.** Changing the shopping
   days moves where the windows fall, so the plan already out can still claim
   nights that now belong to the window being planned. `planWindow()` takes those

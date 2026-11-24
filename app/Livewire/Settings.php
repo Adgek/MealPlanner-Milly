@@ -51,7 +51,9 @@ class Settings extends Component
     public array $schedule = [];
 
     /**
-     * The shopping trips, in the order the household keeps them.
+     * The shopping trips. They arrive in weekday order, as HouseholdSettings
+     * hands them over, and a trip added here lands at the bottom until it is
+     * saved and read again.
      *
      * @var array<int, array{weekday: string, time: string}>
      */
@@ -385,8 +387,14 @@ class Settings extends Component
     }
 
     /**
-     * The shopping trips as one line — "Sunday 10:00 am · Wednesday 5:30 pm" —
+     * The shopping trips as one line — "Wednesday 5:30 pm · Sunday 10:00 am" —
      * so the household can read back what it has without decoding time inputs.
+     *
+     * In weekday order, like HouseholdSettings::shoppingTimes(), whatever order
+     * the rows are in: a trip just added sits at the bottom of the form until it
+     * is saved, and this line is meant to read as the week does. The rows stay
+     * where they are — inputs that reshuffle under a thumb are worse than a list
+     * out of order.
      */
     public function shoppingSummary(): string
     {
@@ -399,10 +407,15 @@ class Settings extends Component
                 continue;
             }
 
-            $trips[] = $weekday->label().' '.TimeOfDay::label($window['time'] ?? '');
+            $trips[] = [
+                'order' => $weekday->isoNumber(),
+                'trip' => $weekday->label().' '.TimeOfDay::label($window['time'] ?? ''),
+            ];
         }
 
-        return implode(' · ', $trips);
+        usort($trips, fn (array $a, array $b) => $a['order'] <=> $b['order']);
+
+        return implode(' · ', array_column($trips, 'trip'));
     }
 
     public function render(): View

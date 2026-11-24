@@ -6,8 +6,10 @@
 |--------------------------------------------------------------------------
 |
 | The `scheduler` container runs `php artisan schedule:work`, which reads this
-| file every minute. Its clock is set to APP_TIMEZONE, so a time written here is
-| the time on the kitchen wall.
+| file every minute. It evaluates the schedule against app.schedule_timezone —
+| the household's 'time_zone' setting, falling back to HOUSEHOLD_TIMEZONE before
+| the database can be read — so a time written here is the time on the kitchen
+| wall.
 |
 | Nothing is scheduled yet, so the scheduler logs "No scheduled commands are
 | ready to run." The jobs that belong here:

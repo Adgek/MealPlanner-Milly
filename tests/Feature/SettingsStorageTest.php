@@ -101,12 +101,33 @@ it('reads the starting settings without any rows in the table', function () {
 it('reads the two shopping windows as weekdays and times', function () {
     $windows = HouseholdSettings::shoppingTimes();
 
-    // Sunday 10:00 am and Wednesday 5:30 pm.
+    // Sunday 10:00 am and Wednesday 5:30 pm — handed back Monday first, which is
+    // why Wednesday comes before Sunday however the default is stored.
     expect($windows)->toHaveCount(2)
-        ->and($windows[0]['weekday'])->toBe(Weekday::Sunday)
-        ->and($windows[0]['time'])->toBe('10:00')
-        ->and($windows[1]['weekday'])->toBe(Weekday::Wednesday)
-        ->and($windows[1]['time'])->toBe('17:30');
+        ->and($windows[0]['weekday'])->toBe(Weekday::Wednesday)
+        ->and($windows[0]['time'])->toBe('17:30')
+        ->and($windows[1]['weekday'])->toBe(Weekday::Sunday)
+        ->and($windows[1]['time'])->toBe('10:00');
+});
+
+it('reads the shopping days in weekday order however they were saved', function () {
+    // The Settings page appends a new trip where the household added it, so the
+    // stored list is in no particular order. Whoever reads it — MM-6's windows,
+    // MM-9's "the evening before the shop" — gets one notion of week order
+    // (MM-16), the same one CookScheduleNight::week() comes back in.
+    HouseholdSettings::set(HouseholdSettings::KEY_SHOPPING_TIMES, [
+        ['weekday' => 'sunday', 'time' => '10:00'],
+        ['weekday' => 'wednesday', 'time' => '17:30'],
+        ['weekday' => 'monday', 'time' => '08:15'],
+        ['weekday' => 'saturday', 'time' => '16:45'],
+    ]);
+
+    expect(HouseholdSettings::shoppingTimes())->toBe([
+        ['weekday' => Weekday::Monday, 'time' => '08:15'],
+        ['weekday' => Weekday::Wednesday, 'time' => '17:30'],
+        ['weekday' => Weekday::Saturday, 'time' => '16:45'],
+        ['weekday' => Weekday::Sunday, 'time' => '10:00'],
+    ]);
 });
 
 it('reads the prep block as a weekday and a span', function () {

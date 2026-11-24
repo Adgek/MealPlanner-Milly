@@ -201,7 +201,19 @@ class HouseholdSettings
     }
 
     /**
-     * The shopping windows, as a list of ['weekday' => Weekday, 'time' => 'HH:MM'].
+     * The shopping windows, as a list of ['weekday' => Weekday, 'time' => 'HH:MM'],
+     * in weekday order: Monday first, Sunday last.
+     *
+     * The order is settled here, on read, rather than on save. A new trip is
+     * appended on the Settings page where the household added it, and the rows
+     * already in the database were written unsorted — the starting defaults
+     * themselves are stored Sunday-then-Wednesday — so sorting here puts what is
+     * stored today in order too, and the stored shape needs no migration.
+     *
+     * Sorted by Weekday::isoNumber(), which is the order CookScheduleNight::week()
+     * comes back in, so the app has one notion of week order. Every reader can
+     * rely on it: MM-6 derives each window from this list, MM-9 and MM-13 the
+     * evening before the shop.
      *
      * @return array<int, array{weekday: Weekday, time: string}>
      */
@@ -209,10 +221,17 @@ class HouseholdSettings
     {
         $times = (array) self::get(self::KEY_SHOPPING_TIMES);
 
-        return array_values(array_map(fn (array $window) => [
+        $windows = array_map(fn (array $window) => [
             'weekday' => Weekday::from($window['weekday']),
             'time' => (string) $window['time'],
-        ], $times));
+        ], $times);
+
+        usort(
+            $windows,
+            fn (array $a, array $b) => $a['weekday']->isoNumber() <=> $b['weekday']->isoNumber(),
+        );
+
+        return $windows;
     }
 
     /**

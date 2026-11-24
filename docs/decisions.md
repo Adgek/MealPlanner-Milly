@@ -357,6 +357,139 @@ will be "wrong in a way nobody notices until dinner" are unit-tested on their ow
 - **Still out:** bulk-buy pairing (MM-11) and kitchen projects (MM-12) both change
   the picker, and MM-11's ticket says not to run the two at once.
 
+### What MM-7 added (the grocery list)
+
+The list is in `app/Grocery`. As with the picker, the rules are plain classes over
+plain values — `MergeKey`, `IngredientNeed`, `GroceryLine`, `GroceryMerge`,
+`GroceryBasket`, `GrocerySectionOrder`, `GroceryListText` — unit-tested with no
+database and no framework boot, because a quietly wrong amount is only found out
+at the till (AGENTS.md). `GroceryListBuilder` is the one door that touches the
+database.
+
+- **`GroceryListBuilder` is the API the rest of the app calls.** MM-8, MM-9,
+  MM-11, MM-12 and MM-14 should go through it: `listFor()` for the stored list,
+  `textFor()` for the same list as plain text, `rebuild()` to make it again after
+  the plan changed, `previewFor()` for what the window asks for without storing
+  anything. A `GroceryList` is what a page or a message renders — store sections
+  in order, each holding `GroceryLine`s, with the pantry basics as a separate
+  section at the end. `GroceryLine::toArray()` is the structured form;
+  `GroceryListText::post()` the plain-text one.
+
+- **Two needs merge when the name and the unit match, and never otherwise.** The
+  name is compared with its case and spacing ignored, so "Ground beef", "ground
+  beef" and "Ground  beef" are one thing. The unit has to match exactly after the
+  same normalising, and **nothing converts between units**: "1 lb" and "500 g"
+  stay two lines. A pound is not 500 g, and a conversion table would be the app
+  inventing household data — two lines on a list somebody reads anyway is the
+  cheaper mistake. **MM-11's split notes and MM-12's project ingredients join the
+  same list and inherit this key** rather than defining their own.
+
+  What happens when two needs do merge:
+
+  - **amounts add up** — "1 lb + 1 lb ground beef" is "2 lb", which is the whole
+    point (AppPlan.md);
+  - **a need with no amount still merges, and adds nothing to the number.** Both
+    the amount and the unit are optional on an ingredient, for the things nobody
+    measures ("a splash of soy"). A line nobody measured shows no amount at all
+    rather than a number the app made up. The trade-off is a line that mixes the
+    two can understate; the meals it lists are the check, and the household is
+    looking in the fridge anyway;
+  - **the first spelling and the first real store section win,** so the earliest
+    night of the window decides how a line reads. Two recipes that disagree about
+    the aisle still make one line: merging the amount matters more than the aisle,
+    and the recipe is the thing to fix;
+  - **a line is a pantry basic only if every need says so.** If one meal treats it
+    as something to buy, it belongs on the list proper — being wrong in the other
+    direction hides a real ingredient in the short section nobody shops from.
+
+- **A night with no recipe buys nothing.** A freezer meal was cooked and frozen
+  weeks ago and the portion it holds is the record of that; a night off is
+  leftovers, travel or eating out; and a night **nothing fitted** has no meal
+  either — it is a real stored state (MM-6), and the household is being asked to
+  add a recipe, not to shop for a dinner that does not exist.
+
+- **The kid backup foods go on every list,** whatever is cooking, because that is
+  what the off-ramp is (AppPlan.md, section 3). They are added last, so one a
+  recipe also asks for merges into that recipe's line and keeps its real section;
+  the rest group under **`Kid backup`**, since `kid_backup_foods` has no store
+  section of its own. The pantry basics are the **`Check you have`** section, and
+  anything with no section at all lands in **`Other`**, last of the shopping.
+
+- **The order of the sections is a household value, not a sort in code.**
+  `store_section_order` is a new setting: the section names in the order they walk
+  their store. It starts **empty**, because nobody can guess a store's layout, and
+  an empty list means alphabetical — which at least puts the same section in the
+  same place every week. Sections they haven't named follow the ones they have.
+  Like MM-6's three settings, the Settings page (MM-4) can expose it whenever the
+  household wants to turn the dial; nothing breaks until it does.
+
+- **The list is stored, and making it again preserves the ticks that still mean
+  something.** MM-3 decided the checklist is stored rather than recomputed — both
+  phones see the same ticks, and a re-roll must not rewrite the list somebody is
+  standing in the shop with. That sits awkwardly beside "make the list again
+  whenever the plan changes", so a rebuild **reconciles** line by line instead of
+  replacing:
+
+  - a line that is **still needed keeps its row and its tick**, even when the
+    meals behind it changed. "We have this" does not stop being true because
+    Tuesday's dinner did;
+  - unless the plan now **asks for more of it** — then the tick goes, because "we
+    have enough" was true of the old amount. Only comparable amounts count: an
+    amount appearing where there was none means the recipe got more specific, not
+    that the household needs more;
+  - a line **nothing wants any more is taken off**, ticked or not. It is not part
+    of this shop;
+  - a line **nothing had asked for before is added, unticked**, so the thing the
+    re-roll means you still have to buy is the thing that stands out.
+
+  A line's identity through all of that is its merge key, so changing a recipe's
+  unit is a new line and a new tick — correctly, because "we have 1 lb" says
+  nothing about 500 g.
+
+- **`plans.grocery_list_changed_at` is stamped only when a line really moved,** so
+  it means "the list changed then" and not "somebody looked at it then". With
+  `Plan::shoppingMoment()` — the plan's shopping date at the household's time for
+  that weekday — it answers `Plan::groceryListChangedAfterShopping()`, which is
+  **the warning MM-8 owes the fridge**: the list someone carried round the shop is
+  no longer the list the plan asks for. It says false when the household no longer
+  shops that weekday, because "we can't tell" is not "it changed". Each row's own
+  `created_at` says when that line appeared, for a page that wants to point at the
+  ones added since.
+
+- **A window whose last night has gone by is left exactly as it was shopped.** The
+  planner will not change a night that has passed either, so there is nothing for
+  the list to be out of step with, and rewriting it would only damage the record of
+  what was actually bought. `Plan::hasPassed()` is that fence, next to
+  `PlanNight::hasPassed()`.
+
+- **`MealPlanner` keeps the list in step, so no caller has to remember.**
+  `planWindow()`, `rerollNight()`, `chooseMeal()`, `setOverride()` and
+  `clearOverride()` each make the list again inside their own transaction —
+  including for a plan that just gave nights up to the window being planned, which
+  is now buying for one night fewer. A rebuild is idempotent, so a change that left
+  the meals alone (a note-only override, a lock) writes nothing and stamps nothing.
+  Model events on `PlanNight` would have been the tempting way to do this and are
+  the wrong one: the planner saves a night twice while rolling it — released, then
+  filled — and a rebuild in the gap would delete a line and add it back unticked,
+  throwing away exactly the ticks this is meant to protect.
+
+- **Two columns were added.** `plan_grocery_items.meals` (JSON) holds which dinners
+  want a line, in night order: "show which meals use each item" is part of the
+  stored list rather than a view over the plan, so a ticked line cannot be
+  re-labelled by a re-roll and MM-9 can render a line of text without joining the
+  plan back in. `plans.grocery_list_changed_at` is above.
+
+- **`php artisan milly:groceries`** prints a window's list — grouped, ticks shown,
+  with `--shopping-date`, `--rebuild` and `--text` (exactly what MM-9 will post).
+  It is the front door until MM-8 exists, and it is how you see what the merge did.
+  Anything it shows a person goes through `HouseholdSettings::cookLabel()`.
+
+- **Deliberately not here:** pantry tracking (the household crosses items off by
+  hand — AppPlan.md is explicit), bulk-buy split notes (MM-11), and a due kitchen
+  project's ingredients (MM-12). The ingredients table is polymorphic precisely so
+  MM-12 can add a project's needs to the same merge; MM-7 reads the recipe side
+  only, because deciding when a project is due is MM-12's job.
+
 ### Open, not blocking
 
 - **Reaching the app away from home.** Not decided. Today the answer is "you can't". If the household wants the plan page or Slack links to work on mobile data, the options are something like Tailscale (and then a login, because the app would be reachable from more places) or leaving it home-only. MM-10 can raise this again.

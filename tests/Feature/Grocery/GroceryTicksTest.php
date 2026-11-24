@@ -282,3 +282,24 @@ it('makes the list again when a night becomes a night off', function () {
 
     expect(theLineFor('Ground beef')->quantity)->toBe(2.0);
 });
+
+it('drops the tick when an amount appears and a second dinner wants it', function () {
+    // Monday's chili asks for beef without saying how much, so the line reads
+    // "Ground beef" and the household crosses it off. Tuesday's tacos then ask
+    // for a pound. An unmeasured need adds nothing to the number, so the line now
+    // reads "1 lb" — two dinners' worth of beef, crossed off, as one pound.
+    $chili = aRecipeFor('Chili', 'Ground beef', null, 'lb');
+    $tacos = aRecipeFor('White Boy Tacos', 'Ground beef', 1, 'lb');
+    $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
+
+    $plan = aPlannedWindowOf($chili, $pasta, $pasta);
+
+    theLineFor('Ground beef')->check();
+
+    (new MealPlanner)->chooseMeal(theNight($plan, 1), $tacos);
+
+    expect(theLineFor('Ground beef')->quantity)->toBe(1.0)
+        ->and(theLineFor('Ground beef')->meals)->toBe(['Chili', 'White Boy Tacos'])
+        ->and(theLineFor('Ground beef')->checked)->toBeFalse()
+        ->and(theLineFor('Ground beef')->checked_at)->toBeNull();
+});

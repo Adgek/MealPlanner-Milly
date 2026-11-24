@@ -474,9 +474,14 @@ database.
     meals behind it changed. "We have this" does not stop being true because
     Tuesday's dinner did;
   - unless the plan now **asks for more of it** — then the tick goes, because "we
-    have enough" was true of the old amount. Only comparable amounts count: an
-    amount appearing where there was none means the recipe got more specific, not
-    that the household needs more;
+    have enough" was true of the old amount. Where one of the two amounts is
+    missing, what settles it is whether another dinner has started wanting the
+    line: an amount appearing for the same single meal is a recipe getting more
+    specific, but an amount appearing alongside a **second meal** is a bigger shop
+    hiding behind a tick. That case is the intersection of two rules that are each
+    fine alone — an unmeasured need adds nothing to the total, and an amount is
+    only compared with another amount — and it would have read "1 lb", crossed
+    off, for two dinners' worth of beef;
   - a line **nothing wants any more is taken off**, ticked or not. It is not part
     of this shop;
   - a line **nothing had asked for before is added, unticked**, so the thing the

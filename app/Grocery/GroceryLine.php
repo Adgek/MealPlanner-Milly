@@ -171,19 +171,27 @@ final class GroceryLine
      * Does this line ask for more than the one it replaces did?
      *
      * What a tick turns on: "we have enough of this" stops being true when the
-     * plan starts asking for more (MM-7, docs/decisions.md). Only comparable when
-     * both lines named an amount — an amount appearing where there was none says
-     * the recipe got more specific, not that the household needs more.
+     * plan starts asking for more (MM-7, docs/decisions.md).
+     *
+     * Two amounts compare directly. Where one of them is missing — and both the
+     * amount and the unit are optional on an ingredient — the question is whether
+     * *another dinner* has started wanting the line: an amount appearing for the
+     * same single meal is a recipe getting more specific, but an amount appearing
+     * alongside a second meal is a bigger shop hiding behind a tick. An unmeasured
+     * need adds nothing to the total, so "some beef" ticked for Monday would
+     * otherwise still read as crossed off when Tuesday asked for a pound.
      */
     public function asksForMoreThan(self $other): bool
     {
-        if ($this->quantity === null || $other->quantity === null) {
-            return false;
+        if ($this->quantity !== null && $other->quantity !== null) {
+            // A hundredth: the column stores two decimal places, so anything
+            // smaller is rounding rather than a bigger shop.
+            return $this->quantity > $other->quantity + 0.005;
         }
 
-        // A hundredth: the column stores two decimal places, so anything smaller
-        // is rounding rather than a bigger shop.
-        return $this->quantity > $other->quantity + 0.005;
+        return $this->quantity !== null
+            && $other->quantity === null
+            && count($this->meals) > count($other->meals);
     }
 
     /**

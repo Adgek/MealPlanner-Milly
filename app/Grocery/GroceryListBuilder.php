@@ -12,6 +12,7 @@ use App\Planning\Pick;
 use App\Settings\HouseholdSettings;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The grocery list, as the rest of the app uses it.
@@ -422,14 +423,32 @@ final class GroceryListBuilder
      * line of their own, and treating a tidy-up as a change would stamp the plan
      * and have MM-8 warn about a list that reads exactly as it did.
      *
+     * Since MM-23 the database refuses the second row, so this is a backstop and
+     * nothing should reach it — which is why it **logs** when something does. It
+     * stays silent towards the household, because a line appearing twice is not
+     * their mistake to fix, but a repair nobody can see is how the duplicate went
+     * unnoticed until MM-7 was reviewed. The window of visible duplication was
+     * whatever it was, and nothing said so.
+     *
      * @param  Collection<int, PlanGroceryItem>  $stored
      */
     private function oneRowOf(Collection $stored): PlanGroceryItem
     {
         $keep = $stored->firstWhere('checked', true) ?? $stored->first();
+        $extra = $stored->reject(fn (PlanGroceryItem $row) => $row->is($keep));
 
-        $stored->reject(fn (PlanGroceryItem $row) => $row->is($keep))
-            ->each(fn (PlanGroceryItem $row) => $row->delete());
+        if ($extra->isNotEmpty()) {
+            Log::warning('The grocery list had one line stored more than once; the duplicates were removed.', [
+                'plan_id' => $keep->plan_id,
+                'name' => $keep->name,
+                'unit' => $keep->unit,
+                'kept' => $keep->getKey(),
+                'kept_was_ticked' => $keep->checked,
+                'removed' => $extra->map(fn (PlanGroceryItem $row) => $row->getKey())->values()->all(),
+            ]);
+        }
+
+        $extra->each(fn (PlanGroceryItem $row) => $row->delete());
 
         return $keep;
     }

@@ -12,6 +12,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /*
  * One thing on the grocery list is one row, and one checkbox (MM-23).
@@ -257,10 +258,17 @@ it('leaves the tick on a line the other rebuild stored', function () {
         ->and($nuggets->first()->checked_at)->not->toBeNull();
 });
 
-it('keeps one line when a line has somehow been stored twice', function () {
-    // The backstop behind the index, for a row from before it or one written by
-    // hand. The ticked row survives, that tick being somebody's work at the
-    // fridge, and the tidy-up is not treated as the list changing.
+it('keeps one line when a line has somehow been stored twice, and says so', function () {
+    // The backstop. Nothing should reach it now, so if something does — a row
+    // from before the index, or one written by hand — the repair is logged. It is
+    // still not a message to the household: a line appearing twice is not their
+    // mistake to fix. But a repair nobody can see is how this went unnoticed, so
+    // the next one leaves a trace.
+    //
+    // The ticked row survives, that tick being somebody's work at the fridge, and
+    // the tidy-up is not treated as the list changing.
+    Log::spy();
+
     $chili = aDinnerThatNeeds('Chili', 'Ground beef');
     $plan = aPlannedWindowOf($chili, $chili, $chili);
 
@@ -281,6 +289,23 @@ it('keeps one line when a line has somehow been stored twice', function () {
         ->and($plan->refresh()->grocery_list_changed_at->eq($stamped))->toBeTrue()
         // The row that went is the one the rebuild itself had written.
         ->and(PlanGroceryItem::query()->whereKey($written->getKey())->exists())->toBeFalse();
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->withArgs(fn (string $message, array $context) => str_contains($message, 'stored more than once')
+            && (int) $context['plan_id'] === $plan->getKey()
+            && $context['name'] === 'Ground beef'
+            && $context['kept'] === $ticked->getKey()
+            && $context['kept_was_ticked'] === true
+            && $context['removed'] === [$written->getKey()]);
+});
+
+it('says nothing when there is nothing to repair', function () {
+    Log::spy();
+
+    $plan = aPlannedWindowOf(aDinnerThatNeeds('Chili', 'Ground beef'));
+    (new GroceryListBuilder)->rebuild($plan->refresh());
+
+    Log::shouldNotHaveReceived('warning');
 });
 
 it('keeps the ticked row when the migration finds a line stored twice', function () {

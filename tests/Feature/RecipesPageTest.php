@@ -181,6 +181,45 @@ it('keeps the history and the past night when it removes a recipe that has been 
         ->and($past->fresh()->recipe_id)->toBe($chili->id);
 });
 
+it('never claims a dinner changed when nothing else fitted', function () {
+    // The only recipe in the vault is the one being removed, so the re-pick has
+    // nothing to put on the night and MM-6 keeps the meal there.
+    $chili = Recipe::factory()->create(['name' => 'Chili']);
+
+    $plan = Plan::factory()->create();
+    $night = PlanNight::factory()->for($plan)->on(aVaultNight(1))->withRecipe($chili)->create();
+
+    Livewire::test(Recipes::class)
+        ->call('confirmRemove', $chili->id)
+        ->call('retire', $chili->id)
+        ->assertDontSee('now has a different dinner')
+        ->assertSee($night->date->format('D j M').' kept it')
+        ->assertSee('Add a recipe that fits');
+
+    // The banner and the plan agree: the night still has chili on it.
+    expect($night->fresh()->recipe_id)->toBe($chili->id)
+        ->and($night->fresh()->pick_note)->toBe('Kept Chili: nothing else fits.');
+});
+
+it('reports only the nights that really changed', function () {
+    $chili = Recipe::factory()->create(['name' => 'Chili']);
+    $pasta = Recipe::factory()->effort(EffortTier::Chaos15)->cookableBy(CookableBy::Both)->create();
+
+    $plan = Plan::factory()->create();
+    $monday = PlanNight::factory()->for($plan)->on(aVaultNight(1))->withRecipe($chili)->create();
+    // One alternative in the vault, and it can only be on one night of a window.
+    $tuesday = PlanNight::factory()->for($plan)->on(aVaultNight(2))->withRecipe($chili)->create();
+
+    Livewire::test(Recipes::class)
+        ->call('confirmRemove', $chili->id)
+        ->call('retire', $chili->id)
+        ->assertSee($monday->date->format('D j M').' now has a different dinner.')
+        ->assertSee($tuesday->date->format('D j M').' kept it');
+
+    expect($monday->fresh()->recipe_id)->toBe($pasta->id)
+        ->and($tuesday->fresh()->recipe_id)->toBe($chili->id);
+});
+
 it('leaves a locked night its dinner, and says so', function () {
     $chili = Recipe::factory()->create(['name' => 'Chili']);
     Recipe::factory()->effort(EffortTier::Chaos15)->cookableBy(CookableBy::Both)->create();

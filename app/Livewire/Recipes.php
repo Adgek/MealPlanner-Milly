@@ -70,7 +70,7 @@ class Recipes extends Component
             return;
         }
 
-        $this->done((new Retirement)->retire($model)->whatRemovingDid());
+        $this->done((new Retirement)->retire($model)->describe());
     }
 
     public function bringBack(int $recipe): void

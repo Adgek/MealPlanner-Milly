@@ -209,38 +209,18 @@ final class MealUsage
     }
 
     /**
-     * What removing it did, once it is done: the banner the household reads
-     * afterwards.
+     * How many portions a removal would hand back to the count.
      *
-     * Past tense, and it answers the two questions the warning raised — what
-     * happened to the nights, and whether anything was lost.
+     * Only the nights that are really picked again: a locked night keeps its meal
+     * and goes on holding its portion, and a portion on a night that has gone by
+     * was eaten (MM-6).
      */
-    public function whatRemovingDid(): string
+    public function portionsComingBack(): int
     {
-        $sentences = [$this->name.' is out of the vault, and the picker will not choose it again.'];
-
-        if (($repicked = $this->nightsToRepick()) !== []) {
-            $sentences[] = sprintf(
-                '%s now %s a different dinner.',
-                $this->datesOf($repicked),
-                count($repicked) === 1 ? 'has' : 'have',
-            );
-        }
-
-        if (($locked = $this->lockedNights()) !== []) {
-            $sentences[] = sprintf(
-                '%s %s it: %s locked.',
-                $this->datesOf($locked),
-                count($locked) === 1 ? 'keeps' : 'keep',
-                count($locked) === 1 ? 'that night is' : 'those nights are',
-            );
-        }
-
-        if ($this->hasBeenEaten()) {
-            $sentences[] = 'Nothing you have cooked was lost.';
-        }
-
-        return implode(' ', $sentences);
+        return count(array_filter(
+            $this->nightsToRepick(),
+            fn (UsedNight $night): bool => $night->holdsPortion,
+        ));
     }
 
     private function aboutUpcomingNights(): ?string
@@ -308,18 +288,45 @@ final class MealUsage
         );
     }
 
+    /**
+     * What will still be in the freezer afterwards.
+     *
+     * The count the household is looking at is not the whole story: a portion
+     * planned for a night that is about to be picked again comes back to the
+     * count as part of the removal. Saying "the count is left alone" while a
+     * portion was handed back put a number on the card that the sentence
+     * contradicted.
+     */
     private function aboutPortions(): ?string
     {
-        if ($this->portionsLeft === null || $this->portionsLeft < 1) {
+        if ($this->portionsLeft === null) {
             return null;
         }
 
+        $comingBack = $this->portionsComingBack();
+        $total = $this->portionsLeft + $comingBack;
+
+        if ($total < 1) {
+            return null;
+        }
+
+        $handedBack = $comingBack === 0 ? '' : sprintf(
+            ', including the %s held for %s',
+            $comingBack === 1 ? 'one' : $comingBack,
+            $this->datesOf(array_values(array_filter(
+                $this->nightsToRepick(),
+                fn (UsedNight $night): bool => $night->holdsPortion,
+            ))),
+        );
+
         return sprintf(
-            '%d %s still counted in the stash. The count is left alone, but the picker stops planning '
-            .'%s — eat them first, or bring it back later.',
-            $this->portionsLeft,
-            $this->portionsLeft === 1 ? 'portion is' : 'portions are',
-            $this->portionsLeft === 1 ? 'it' : 'them',
+            '%d %s still be counted in the stash%s. The picker stops planning %s — eat %s first, or '
+            .'bring it back later.',
+            $total,
+            $total === 1 ? 'portion will' : 'portions will',
+            $handedBack,
+            $total === 1 ? 'it' : 'them',
+            $total === 1 ? 'it' : 'them',
         );
     }
 

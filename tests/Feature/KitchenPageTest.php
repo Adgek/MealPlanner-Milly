@@ -262,7 +262,7 @@ it('says what a removal would touch, portions and all', function () {
 
     Livewire::test(Kitchen::class)
         ->call('confirmRemove', $soup->id)
-        ->assertSee('3 portions are still counted in the stash')
+        ->assertSee('3 portions will still be counted in the stash')
         ->assertSee('Big batch minestrone restocks it')
         // A project still points at it, so there is nothing to delete cleanly.
         ->assertDontSee('Delete it for good');
@@ -281,8 +281,12 @@ it('hands a held portion back when it takes an item out of the stash', function 
 
     Livewire::test(Kitchen::class)
         ->call('confirmRemove', $soup->id)
+        // The warning counts the portion the planned night is about to hand back.
+        ->assertSee('2 portions will still be counted in the stash, including the one held for')
         ->call('retire', $soup->id)
-        ->assertSee('Frozen minestrone is out of the vault')
+        // Out of the stash, not out of the vault: this is the freezer.
+        ->assertSee('Frozen minestrone is out of the stash, and the picker will not plan it again.')
+        ->assertSee('1 portion went back into the count.')
         ->assertCount('rows', 0);
 
     // The portion is back in the freezer and still counted; the reservation is

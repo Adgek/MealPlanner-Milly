@@ -33,23 +33,41 @@ final class Retirement
     public function __construct(private readonly ?MealPlanner $planner = null) {}
 
     /**
-     * Take a meal out of the vault and repair the plan, returning what was
-     * pointing at it before anything changed — which is what the page then tells
-     * the household it did.
+     * Take a meal out of the vault and repair the plan, reporting what really
+     * happened — which is what the page then tells the household it did.
+     *
+     * The report is built from the outcome rather than from the intention. A
+     * re-pick that finds nothing else fitting keeps the meal on the night (MM-6),
+     * so "these nights will be picked again" is a forecast that is sometimes
+     * wrong, and a banner written from it claimed a dinner had changed while the
+     * plan still read the same.
      */
-    public function retire(Recipe|FreezerItem $meal): MealUsage
+    public function retire(Recipe|FreezerItem $meal): Removal
     {
         $usage = MealUsage::of($meal, $this->planner());
+        $portionsBefore = $meal instanceof FreezerItem ? $meal->portions_left : 0;
 
-        DB::transaction(function () use ($meal, $usage): void {
+        $outcome = DB::transaction(function () use ($meal, $usage): array {
             // Retire first: the re-pick below reads the vault, and a meal still in
             // it could be handed straight back to the night it was just taken off.
             $meal->retire();
 
-            $this->repick($usage);
+            return $this->repick($usage);
         });
 
-        return $usage;
+        $portionsAfter = $meal instanceof FreezerItem
+            ? ($meal->fresh()?->portions_left ?? $portionsBefore)
+            : 0;
+
+        return new Removal(
+            name: $usage->name,
+            fromTheStash: $meal instanceof FreezerItem,
+            changed: $outcome['changed'],
+            kept: $outcome['kept'],
+            locked: $usage->lockedNights(),
+            portionsHandedBack: max(0, $portionsAfter - $portionsBefore),
+            hadBeenEaten: $usage->hasBeenEaten(),
+        );
     }
 
     /**
@@ -84,22 +102,55 @@ final class Retirement
     }
 
     /**
-     * Let the planner choose again for the nights that lost their dinner.
+     * Let the planner choose again for the nights that lost their dinner, and say
+     * which ones really changed.
      *
      * A re-roll that finds nothing else fitting keeps what the night had and says
      * so ("Kept Chili: nothing else fits.", MM-6). That is deliberate: the shop
      * for that window has already been planned around this meal, so a dinner with
-     * an explanation beats an empty night.
+     * an explanation beats an empty night — and it is exactly why the two lists
+     * have to be told apart afterwards rather than assumed beforehand.
+     *
+     * @return array{changed: array<int, UsedNight>, kept: array<int, UsedNight>}
      */
-    private function repick(MealUsage $usage): void
+    private function repick(MealUsage $usage): array
     {
-        $nights = PlanNight::query()
-            ->whereKey($usage->nightIdsToRepick())
-            ->get();
+        $wanted = [];
+
+        foreach ($usage->nightsToRepick() as $night) {
+            $wanted[$night->id] = $night;
+        }
+
+        $changed = [];
+        $kept = [];
+
+        $nights = PlanNight::query()->whereKey(array_keys($wanted))->get();
 
         foreach ($nights as $night) {
+            $before = $this->mealOn($night);
+
             $this->planner()->rerollNight($night);
+
+            if ($this->mealOn($night) === $before) {
+                $kept[] = $wanted[$night->getKey()];
+
+                continue;
+            }
+
+            $changed[] = $wanted[$night->getKey()];
         }
+
+        return ['changed' => $changed, 'kept' => $kept];
+    }
+
+    /**
+     * What a night is pointing at, as something two reads can be compared on.
+     *
+     * @return array{0: string|null, 1: int|null, 2: int|null}
+     */
+    private function mealOn(PlanNight $night): array
+    {
+        return [$night->selection?->value, $night->recipe_id, $night->freezer_item_id];
     }
 
     private function planner(): MealPlanner

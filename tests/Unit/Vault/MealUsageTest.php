@@ -24,6 +24,7 @@ function aPlannedNight(
     bool $hasPassed = false,
     bool $isLocked = false,
     bool $isCurrentPlan = false,
+    bool $holdsPortion = false,
     int $id = 1,
 ): UsedNight {
     return new UsedNight(
@@ -32,6 +33,7 @@ function aPlannedNight(
         hasPassed: $hasPassed,
         isLocked: $isLocked,
         isCurrentPlan: $isCurrentPlan,
+        holdsPortion: $holdsPortion,
     );
 }
 
@@ -178,12 +180,64 @@ it('caps a long list of nights rather than printing a paragraph', function () {
         ->toContain('Thu 1 Jan, Fri 2 Jan, Sat 3 Jan and 3 other nights');
 });
 
-it('says how many portions are still in the stash', function () {
+it('says how many portions will still be in the stash', function () {
     $usage = new MealUsage(name: 'Frozen minestrone', portionsLeft: 3);
 
     expect($usage->warnings()[0])
-        ->toContain('3 portions are still counted in the stash')
-        ->toContain('the picker stops planning them');
+        ->toContain('3 portions will still be counted in the stash.')
+        ->toContain('The picker stops planning them');
+});
+
+it('counts the portion a planned night hands back', function () {
+    // The count on screen says 1, because a second portion is held for a night
+    // that is about to be picked again. Removing it hands that portion back, so
+    // "the count is left alone" would contradict the number on the card.
+    $usage = new MealUsage(
+        name: 'Frozen minestrone',
+        nights: [aPlannedNight('2026-01-20', holdsPortion: true)],
+        portionsLeft: 1,
+    );
+
+    expect($usage->portionsComingBack())->toBe(1)
+        ->and($usage->warnings())
+        ->toContain('2 portions will still be counted in the stash, including the one held for Tue 20 Jan. '
+            .'The picker stops planning them — eat them first, or bring it back later.');
+});
+
+it('says something about the last portion, even when the plan is holding it', function () {
+    // The probe that found this: one portion, planned for tomorrow, so the
+    // stored count reads zero and the old warning said nothing at all.
+    $usage = new MealUsage(
+        name: 'Frozen minestrone',
+        nights: [aPlannedNight('2026-01-20', holdsPortion: true)],
+        portionsLeft: 0,
+    );
+
+    expect($usage->warnings())
+        ->toContain('1 portion will still be counted in the stash, including the one held for Tue 20 Jan. '
+            .'The picker stops planning it — eat it first, or bring it back later.');
+});
+
+it('never counts a portion a locked night keeps holding', function () {
+    // A locked night keeps its meal, so it goes on holding its portion.
+    $usage = new MealUsage(
+        name: 'Frozen minestrone',
+        nights: [aPlannedNight('2026-01-20', isLocked: true, holdsPortion: true)],
+        portionsLeft: 2,
+    );
+
+    expect($usage->portionsComingBack())->toBe(0)
+        ->and($usage->warnings()[1] ?? '')->toContain('2 portions will still be counted in the stash.');
+});
+
+it('never counts a portion that was eaten on a night that has gone by', function () {
+    $usage = new MealUsage(
+        name: 'Frozen minestrone',
+        nights: [aPlannedNight('2026-01-02', hasPassed: true, holdsPortion: true)],
+        portionsLeft: 1,
+    );
+
+    expect($usage->portionsComingBack())->toBe(0);
 });
 
 it('says nothing about an empty box', function () {

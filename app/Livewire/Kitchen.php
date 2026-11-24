@@ -173,7 +173,7 @@ class Kitchen extends Component
             return;
         }
 
-        $this->afterRemoving($item, (new Retirement)->retire($model)->whatRemovingDid());
+        $this->afterRemoving($item, (new Retirement)->retire($model)->describe());
     }
 
     public function bringBack(int $item): void

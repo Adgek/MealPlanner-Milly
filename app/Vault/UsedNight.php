@@ -32,6 +32,12 @@ final class UsedNight
          * ahead? Only used to say so in words.
          */
         public readonly bool $isCurrentPlan = false,
+        /**
+         * Is this night holding a portion out of the freezer stash (MM-6)? A
+         * removal that picks the night again hands that portion back, which is
+         * part of what the household is told before they press anything.
+         */
+        public readonly bool $holdsPortion = false,
     ) {
         $this->date = CalendarDate::of($date);
     }
@@ -44,6 +50,7 @@ final class UsedNight
             hasPassed: $night->hasPassed(),
             isLocked: $night->is_locked,
             isCurrentPlan: $isCurrentPlan,
+            holdsPortion: $night->holdsFreezerPortion(),
         );
     }
 

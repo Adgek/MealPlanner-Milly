@@ -55,19 +55,35 @@ class PlanGroceryItem extends Model
     }
 
     /**
-     * Tick the line off, recording when. Idempotent, so two phones racing at the
-     * fridge cannot overwrite each other's timestamp (MM-8).
+     * Tick the line off, recording when, and say whether this call is the one that
+     * did it.
+     *
+     * The first tick wins, and the database is what decides — not the row in
+     * memory. Both partners open the list while a line is unticked, so each holds
+     * a model that says `checked = false`; a guard read off the instance would let
+     * them both write, and the second would move the timestamp. The condition is
+     * part of the update instead, so only one of the two can match a row (MM-8).
+     *
+     * The loser is refreshed, so the phone that lost shows the tick that won.
      */
     public function check(): bool
     {
-        if ($this->checked) {
+        $at = now();
+
+        $ticked = $this->newQueryWithoutScopes()
+            ->whereKey($this->getKey())
+            ->where('checked', false)
+            ->update(['checked' => true, 'checked_at' => $at]) === 1;
+
+        if (! $ticked) {
+            $this->refresh();
+
             return false;
         }
 
-        return $this->forceFill([
-            'checked' => true,
-            'checked_at' => now(),
-        ])->save();
+        $this->forceFill(['checked' => true, 'checked_at' => $at])->syncOriginal();
+
+        return true;
     }
 
     /**

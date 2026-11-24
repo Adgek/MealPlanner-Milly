@@ -208,6 +208,41 @@ final class MealUsage
         ]));
     }
 
+    /**
+     * What removing it did, once it is done: the banner the household reads
+     * afterwards.
+     *
+     * Past tense, and it answers the two questions the warning raised — what
+     * happened to the nights, and whether anything was lost.
+     */
+    public function whatRemovingDid(): string
+    {
+        $sentences = [$this->name.' is out of the vault, and the picker will not choose it again.'];
+
+        if (($repicked = $this->nightsToRepick()) !== []) {
+            $sentences[] = sprintf(
+                '%s now %s a different dinner.',
+                $this->datesOf($repicked),
+                count($repicked) === 1 ? 'has' : 'have',
+            );
+        }
+
+        if (($locked = $this->lockedNights()) !== []) {
+            $sentences[] = sprintf(
+                '%s %s it: %s locked.',
+                $this->datesOf($locked),
+                count($locked) === 1 ? 'keeps' : 'keep',
+                count($locked) === 1 ? 'that night is' : 'those nights are',
+            );
+        }
+
+        if ($this->hasBeenEaten()) {
+            $sentences[] = 'Nothing you have cooked was lost.';
+        }
+
+        return implode(' ', $sentences);
+    }
+
     private function aboutUpcomingNights(): ?string
     {
         $nights = $this->nightsToRepick();

@@ -11,26 +11,10 @@
     />
 
     <form wire:submit="save" class="space-y-6 pb-4">
-        @if ($saved)
-            <div
-                role="status"
-                class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
-            >
-                <span class="font-medium">Saved.</span>
-                The next plan uses these settings. The plan already on the fridge keeps what it
-                was made with until someone re-plans it.
-            </div>
-        @endif
-
-        @if ($errors->any())
-            <div
-                role="alert"
-                class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
-            >
-                <span class="font-medium">Nothing was saved.</span>
-                Check the fields marked below, then save again.
-            </div>
-        @endif
+        <x-form.notices
+            :saved="$saved"
+            message="The next plan uses these settings. The plan already on the fridge keeps what it was made with until someone re-plans it."
+        />
 
         <x-settings-section
             title="The cooks"
@@ -138,28 +122,22 @@
                         />
                     </div>
 
-                    <button
-                        type="button"
+                    <x-button
                         wire:click="removeShoppingTime({{ $index }})"
-                        class="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-stone-300 px-4 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:mt-6 sm:w-auto"
+                        class="mt-3 sm:mt-6"
                     >
                         Remove<span class="sr-only"> shopping day {{ $index + 1 }}</span>
-                    </button>
+                    </x-button>
                 </div>
             @empty
-                <p class="rounded-lg border border-dashed border-stone-300 px-4 py-3 text-sm text-stone-600">
+                <x-empty-state>
                     No shopping days. Add at least one: the plan is built around the shop.
-                </p>
+                </x-empty-state>
             @endforelse
 
-            <button
-                type="button"
-                wire:click="addShoppingTime"
-                @disabled(count($shoppingTimes) >= 7)
-                class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-stone-300 px-4 text-sm font-medium text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            >
+            <x-button wire:click="addShoppingTime" :disabled="count($shoppingTimes) >= 7">
                 Add a shopping day
-            </button>
+            </x-button>
         </x-settings-section>
 
         <x-settings-section
@@ -260,24 +238,6 @@
             </div>
         </x-settings-section>
 
-        {{--
-            Sticky on a phone, so the save button is reachable from anywhere in a
-            long form without scrolling to the bottom.
-        --}}
-        <div class="sticky bottom-0 -mx-4 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border sm:px-6">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <p class="text-sm text-stone-500">Changes apply to the next plan.</p>
-
-                <button
-                    type="submit"
-                    class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-stone-900 px-5 text-base font-medium text-white transition hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-900/30 disabled:opacity-60 sm:w-auto"
-                    wire:loading.attr="disabled"
-                    wire:target="save"
-                >
-                    <span wire:loading.remove wire:target="save">Save settings</span>
-                    <span wire:loading wire:target="save">Saving…</span>
-                </button>
-            </div>
-        </div>
+        <x-save-bar label="Save settings" note="Changes apply to the next plan." />
     </form>
 </div>

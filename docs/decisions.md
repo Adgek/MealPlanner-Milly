@@ -537,6 +537,33 @@ database.
   MM-12 can add a project's needs to the same merge; MM-7 reads the recipe side
   only, because deciding when a project is due is MM-12's job.
 
+- **One line is one row, and MM-23 made the database say so.** A third column
+  holds the line's identity — `plan_grocery_items.merge_key` is
+  `MergeKey::stored()`, the merge key above hashed — with
+  `unique (plan_id, merge_key)` over it. Nothing had stopped two rebuilds racing
+  from each inserting the same line, because under REPEATABLE READ neither one's
+  read sees the other's row, and two rows is two checkboxes for one thing on
+  MM-8's page: tick one and the other stays unticked.
+
+  **The stored key is the merge key and nothing else,** so what the merge folds
+  into one line is what the index refuses to store twice, and the two cannot
+  drift apart. `(plan_id, name, unit)` could not do the job: `unit` is nullable,
+  MySQL counts nulls as distinct in a unique index, and a need with no unit is
+  ordinary rather than an edge. It is hashed, in an `ascii_bin` column, because
+  the table's collation is `utf8mb4_unicode_ci` — under which `'cafe' = 'café'` is
+  true, so a text key would refuse two lines the merge calls different, and the
+  household would lose one with nothing to show why.
+
+  The writes follow from that. A rebuild reads the window's rows **for update**,
+  so the second of two waits and then reconciles against the first one's work
+  rather than a snapshot taken before it, and a line it has to store goes in as an
+  **upsert on the key**, writing only the columns a line owns: a tick is never
+  overwritten, and nobody is shown a duplicate-key error for owning two phones.
+  `oneRowOf()` stays behind all of it as a backstop for a row from before the
+  index, and now **logs** when it repairs one — still nothing said to the
+  household, whose mistake it isn't, but a repair nobody can see is how this went
+  unnoticed until MM-7 was reviewed.
+
 ### Open, not blocking
 
 - **Reaching the app away from home.** Not decided. Today the answer is "you can't". If the household wants the plan page or Slack links to work on mobile data, the options are something like Tailscale (and then a login, because the app would be reachable from more places) or leaving it home-only. MM-10 can raise this again.

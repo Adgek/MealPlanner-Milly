@@ -60,6 +60,10 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // Write an upsert as `insert ... as alias on duplicate key update`
+            // rather than with `values()`, which MySQL deprecated in 8.0.20.
+            // The grocery list's one-row-per-line write is an upsert (MM-23).
+            'use_upsert_alias' => true,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
@@ -89,6 +93,8 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // As above: the same engine, so the same SQL.
+            'use_upsert_alias' => true,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],

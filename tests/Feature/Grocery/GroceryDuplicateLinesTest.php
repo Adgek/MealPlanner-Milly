@@ -4,9 +4,11 @@ use App\Enums\CookableBy;
 use App\Enums\EffortTier;
 use App\Grocery\GroceryListBuilder;
 use App\Grocery\MergeKey;
+use App\Models\KidBackupFood;
 use App\Models\Plan;
 use App\Models\PlanGroceryItem;
 use App\Models\Recipe;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -83,6 +85,16 @@ function aRowTheIndexCannotSee(Plan $plan, array $attributes = []): PlanGroceryI
     ]);
 
     return PlanGroceryItem::query()->findOrFail($id);
+}
+
+/**
+ * The moment a rebuild has read the window's rows and not yet written any: the
+ * read it holds them with, which is where the other rebuild gets in.
+ */
+function theRebuildsLockingRead(QueryExecuted $query): bool
+{
+    return str_contains($query->sql, 'from `plan_grocery_items`')
+        && str_contains($query->sql, 'for update');
 }
 
 /**
@@ -170,6 +182,79 @@ it('lets two windows ask for the same thing', function () {
 
     expect($row->merge_key)->toBe(PlanGroceryItem::query()->where('plan_id', $plan->getKey())->first()->merge_key)
         ->and(PlanGroceryItem::count())->toBe(2);
+});
+
+it('leaves one row when another rebuild stores the line first', function () {
+    // The race in the ticket: two phones re-rolling different nights, or a
+    // re-roll racing `milly:groceries --rebuild`. Both rebuilds read the stored
+    // list, neither sees the other's row — under REPEATABLE READ a transaction's
+    // reads cannot — and both go on to store the same line.
+    //
+    // Interleaved deliberately rather than with a second connection, because the
+    // suite runs each test inside one transaction (RefreshDatabase) and a second
+    // connection would see none of the fixtures. The other rebuild is run at the
+    // exact moment this one has read the rows and not yet written: the window the
+    // bug lived in. Before MM-23 both inserts went in and the household got two
+    // checkboxes for one thing.
+    $plan = aPlannedWindowOf(aDinnerThatNeeds('Chili', 'Ground beef'));
+
+    // Something the stored list has not got yet, so there is a line to add: the
+    // off-ramp foods go on every list (MM-7).
+    KidBackupFood::factory()->create(['name' => 'Chicken nuggets', 'quantity' => 1, 'unit' => 'bag']);
+
+    $raced = false;
+
+    DB::listen(function (QueryExecuted $query) use (&$raced, $plan) {
+        if ($raced || ! theRebuildsLockingRead($query)) {
+            return;
+        }
+
+        $raced = true;
+
+        (new GroceryListBuilder)->rebuild($plan->fresh());
+    });
+
+    (new GroceryListBuilder)->rebuild($plan->fresh());
+
+    $rows = PlanGroceryItem::query()->where('plan_id', $plan->getKey())->get();
+
+    // The interleave happened at all, which also says the rebuild reads the
+    // window's rows for update rather than taking a snapshot of them.
+    expect($raced)->toBeTrue()
+        ->and($rows->pluck('name')->sort()->values()->all())->toBe(['Chicken nuggets', 'Ground beef'])
+        // One row per line, which is one key per line.
+        ->and($rows->pluck('merge_key')->unique())->toHaveCount(2);
+});
+
+it('leaves the tick on a line the other rebuild stored', function () {
+    // The same race, with the household ticking the new line off at the fridge
+    // before this rebuild gets to its write. The write is an upsert of the
+    // columns a line owns, and a tick is not one of them.
+    $plan = aPlannedWindowOf(aDinnerThatNeeds('Chili', 'Ground beef'));
+
+    KidBackupFood::factory()->create(['name' => 'Chicken nuggets', 'quantity' => 1, 'unit' => 'bag']);
+
+    $raced = false;
+
+    DB::listen(function (QueryExecuted $query) use (&$raced, $plan) {
+        if ($raced || ! theRebuildsLockingRead($query)) {
+            return;
+        }
+
+        $raced = true;
+
+        (new GroceryListBuilder)->rebuild($plan->fresh());
+
+        PlanGroceryItem::query()->firstWhere('name', 'Chicken nuggets')->check();
+    });
+
+    (new GroceryListBuilder)->rebuild($plan->fresh());
+
+    $nuggets = PlanGroceryItem::query()->where('name', 'Chicken nuggets')->get();
+
+    expect($nuggets)->toHaveCount(1)
+        ->and($nuggets->first()->checked)->toBeTrue()
+        ->and($nuggets->first()->checked_at)->not->toBeNull();
 });
 
 it('keeps one line when a line has somehow been stored twice', function () {

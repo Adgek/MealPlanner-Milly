@@ -165,6 +165,11 @@ final class GroceryListBuilder
      * planner will not change a night that has passed either, so there is nothing
      * the list could be out of step with, and rewriting it would only damage the
      * record of what was actually bought.
+     *
+     * **Two of these can run at once** — two phones re-rolling different nights,
+     * or a re-roll racing `milly:groceries --rebuild` — so the stored rows are
+     * read for update and the writes go through the line's key (MM-23). One thing
+     * stays one row, and one checkbox.
      */
     public function rebuild(Plan $plan): GroceryListUpdate
     {
@@ -188,7 +193,7 @@ final class GroceryListBuilder
                 $stored = $rows->pull($line->mergeKey());
 
                 if ($stored === null) {
-                    $plan->groceryItems()->create($line->toRow());
+                    $this->store($plan, $line);
                     $added[] = $line;
 
                     continue;
@@ -349,29 +354,63 @@ final class GroceryListBuilder
     }
 
     /**
+     * Store a line the window asks for and the stored list has not got.
+     *
+     * An upsert on the line's key rather than an insert, because "the list has
+     * not got it" was read a moment ago: another rebuild may have stored it
+     * since, and under REPEATABLE READ this transaction's own reads cannot see
+     * that it did. The unique index would then refuse the insert, and the
+     * household would get a duplicate-key error for having two phones. This
+     * updates that row instead (MM-23).
+     *
+     * It writes exactly the columns a line owns (`GroceryLine::toRow()`), so a
+     * tick the other rebuild's row already carries is left alone, and so is the
+     * `created_at` that says when the line first appeared. Attributes come off an
+     * unsaved model, so the casts stay in one place even though an upsert goes
+     * round them.
+     */
+    private function store(Plan $plan, GroceryLine $line): void
+    {
+        $row = $line->toRow();
+        $attributes = $plan->groceryItems()->make($row)->getAttributes();
+
+        $plan->groceryItems()->upsert([$attributes], ['plan_id', 'merge_key'], array_keys($row));
+    }
+
+    /**
      * The stored rows, oldest first, so the line a household has been ticking is
      * the one the reconcile recognises.
      *
      * @return Collection<int, PlanGroceryItem>
      */
-    private function storedRows(Plan $plan): Collection
+    private function storedRows(Plan $plan, bool $forUpdate = false): Collection
     {
-        return $plan->groceryItems()->orderBy('id')->get();
+        return $plan->groceryItems()
+            ->when($forUpdate, fn ($query) => $query->lockForUpdate())
+            ->orderBy('id')
+            ->get();
     }
 
     /**
-     * The stored rows grouped the way the merge keys a line.
+     * The stored rows grouped the way the merge keys a line, read for update.
      *
-     * Grouped rather than keyed, because two rows can carry one line: a factory
-     * or an import can write the same name and unit twice, and two rebuilds
-     * racing each other could each insert it. Keying would silently drop one of
-     * them from the reconcile and leave it on the list forever.
+     * **For update**, which is what makes a rebuild right while another one is
+     * running (MM-23). A plain read inside a transaction sees the list as it was
+     * when the transaction started, so a rebuild could reconcile against rows
+     * that are no longer there and lines that are. This reads what is committed
+     * now, and holds the window's rows — including the gap where they would be,
+     * so a list that is still empty is covered too — until the rebuild commits.
+     * The second of two rebuilds waits and then sees the first one's work.
+     *
+     * Grouped rather than keyed, because two rows could still carry one line: one
+     * written before MM-23 added the index, or by hand. Keying would silently
+     * drop one of them from the reconcile and leave it on the list forever.
      *
      * @return Collection<string, Collection<int, PlanGroceryItem>>
      */
     private function storedRowsByMergeKey(Plan $plan): Collection
     {
-        return $this->storedRows($plan)
+        return $this->storedRows($plan, forUpdate: true)
             ->groupBy(fn (PlanGroceryItem $item) => GroceryLine::fromStoredItem($item)->mergeKey());
     }
 

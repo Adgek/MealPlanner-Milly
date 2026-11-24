@@ -27,13 +27,7 @@
                 </p>
 
                 <p class="mt-1 text-xs text-stone-500">
-                    @if ($project->producesFreezerItem)
-                        Makes {{ $project->produces_portions }}
-                        {{ Str::plural('portion', (int) $project->produces_portions) }}
-                        of {{ $project->producesFreezerItem->name }}
-                    @else
-                        Stocks the fridge, not the freezer
-                    @endif
+                    {{ $this->producesLabel($project) }}
                     &middot;
                     {{ $project->ingredients_count }} {{ Str::plural('ingredient', $project->ingredients_count) }}
                     @if ($project->last_done_on)

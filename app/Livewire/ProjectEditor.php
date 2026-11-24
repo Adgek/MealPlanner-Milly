@@ -102,6 +102,8 @@ class ProjectEditor extends Component
             // Not `before_or_equal:today`: "today" is the server's date, and at
             // 8pm in Toronto that is already tomorrow (docs/decisions.md).
             'lastDoneOn' => ['nullable', 'date', 'before_or_equal:'.$this->today()],
+
+            ...$this->ingredientRules(),
         ];
     }
 
@@ -129,6 +131,8 @@ class ProjectEditor extends Component
 
             'lastDoneOn.date' => 'Give the date it was last done, or leave it empty for never.',
             'lastDoneOn.before_or_equal' => 'A project cannot have been done in the future.',
+
+            ...$this->ingredientMessages(),
         ];
     }
 

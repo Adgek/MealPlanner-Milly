@@ -286,6 +286,25 @@ class Kitchen extends Component
     }
 
     /**
+     * What finishing a project puts in the freezer, in one line.
+     */
+    public function producesLabel(KitchenProject $project): string
+    {
+        if ($project->producesFreezerItem === null) {
+            return 'Stocks the fridge, not the freezer';
+        }
+
+        $portions = (int) $project->produces_portions;
+
+        return sprintf(
+            'Makes %d %s of %s',
+            $portions,
+            $portions === 1 ? 'portion' : 'portions',
+            $project->producesFreezerItem->name,
+        );
+    }
+
+    /**
      * When a project is next due, in the household's words.
      */
     public function dueLabel(KitchenProject $project): string

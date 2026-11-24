@@ -22,6 +22,7 @@ class RecipeFactory extends Factory
             'cookable_by' => fake()->randomElement(CookableBy::cases()),
             'effort_tier' => fake()->randomElement(EffortTier::cases()),
             'kid_off_ramp' => fake()->sentence(),
+            'retired_at' => null,
         ];
     }
 
@@ -34,6 +35,14 @@ class RecipeFactory extends Factory
             'cookable_by' => CookableBy::Partner,
             'effort_tier' => EffortTier::Chaos15,
         ]);
+    }
+
+    /**
+     * Taken out of the vault: still a recipe, never picked (MM-15).
+     */
+    public function retired(): static
+    {
+        return $this->state(['retired_at' => now()]);
     }
 
     public function cookableBy(CookableBy $cookableBy): static

@@ -61,6 +61,12 @@ final class MealPool
      *
      * Freezer items with nothing left are left out: there is no night to plan
      * around an empty box.
+     *
+     * So is anything the household has retired (MM-15). A retired recipe or
+     * freezer meal is still a row — meal history and the nights that have gone by
+     * keep pointing at it — but the picker stops choosing it, which is what
+     * "remove it from the vault" has to mean when removing the row itself would
+     * destroy the record of having cooked it.
      */
     public static function fromVault(): self
     {
@@ -70,6 +76,7 @@ final class MealPool
             ->pluck('last_cooked_on', 'recipe_id');
 
         $recipes = Recipe::query()
+            ->inTheVault()
             ->orderBy('id')
             ->get()
             ->map(fn (Recipe $recipe) => RecipeOption::fromModel(
@@ -79,6 +86,7 @@ final class MealPool
             ->all();
 
         $freezerMeals = FreezerItem::query()
+            ->inTheVault()
             ->where('portions_left', '>', 0)
             ->orderBy('id')
             ->get()

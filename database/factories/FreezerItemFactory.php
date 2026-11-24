@@ -20,6 +20,7 @@ class FreezerItemFactory extends Factory
             // Most things want overnight in the fridge.
             'thaw_lead_time_hours' => fake()->randomElement([12, 24]),
             'kid_off_ramp' => fake()->sentence(),
+            'retired_at' => null,
         ];
     }
 
@@ -34,5 +35,13 @@ class FreezerItemFactory extends Factory
     public function portions(int $portions): static
     {
         return $this->state(['portions_left' => $portions]);
+    }
+
+    /**
+     * Taken out of the stash the picker draws from, count and all (MM-15).
+     */
+    public function retired(): static
+    {
+        return $this->state(['retired_at' => now()]);
     }
 }

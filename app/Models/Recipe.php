@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\CookableBy;
 use App\Enums\EffortTier;
+use App\Models\Concerns\Retirable;
+use Carbon\CarbonImmutable;
 use Database\Factories\RecipeFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,10 +16,14 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 /**
  * A recipe in the vault (AppPlan.md, section 1).
  *
+ * A retired recipe is still a recipe: the picker stops choosing it, and every
+ * night and history row that points at it stays true (MM-15).
+ *
  * @property string $name
  * @property CookableBy $cookable_by
  * @property EffortTier $effort_tier
  * @property string|null $kid_off_ramp
+ * @property CarbonImmutable|null $retired_at
  *
  * @method static RecipeFactory factory($count = null, $state = [])
  */
@@ -25,6 +31,8 @@ class Recipe extends Model
 {
     /** @use HasFactory<RecipeFactory> */
     use HasFactory;
+
+    use Retirable;
 
     protected $fillable = [
         'name',
@@ -38,6 +46,8 @@ class Recipe extends Model
         return [
             'cookable_by' => CookableBy::class,
             'effort_tier' => EffortTier::class,
+            // An instant: when somebody pressed "remove". Stored UTC.
+            'retired_at' => 'immutable_datetime',
         ];
     }
 

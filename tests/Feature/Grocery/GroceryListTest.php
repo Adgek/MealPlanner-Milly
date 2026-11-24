@@ -62,23 +62,6 @@ function aRecipeThatNeeds(string $name, array $ingredients, EffortTier $effort =
     return $recipe;
 }
 
-/**
- * The window planned with one dinner on each night, in the order given.
- */
-function aPlanOf(Recipe ...$dinners): Plan
-{
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-
-    foreach ($plan->nights as $index => $night) {
-        if (isset($dinners[$index])) {
-            $planner->chooseMeal($night, $dinners[$index]);
-        }
-    }
-
-    return $plan->refresh();
-}
-
 it('combines the ingredients of every planned recipe in the window', function () {
     $bulgogi = aRecipeThatNeeds('Beef Bulgogi', [
         ['Ground beef', 1, 'lb', 'Meat'],
@@ -93,7 +76,7 @@ it('combines the ingredients of every planned recipe in the window', function ()
         ['Garlic', 2, 'clove', 'Produce'],
     ]);
 
-    $list = (new GroceryListBuilder)->listFor(aPlanOf($bulgogi, $tacos, $pasta));
+    $list = (new GroceryListBuilder)->listFor(aPlannedWindowOf($bulgogi, $tacos, $pasta));
 
     expect($list->lineFor('Ground beef', 'lb')->amount())->toBe('2 lb')
         ->and($list->lineFor('Ground beef', 'lb')->meals)->toBe(['Beef Bulgogi', 'White Boy Tacos'])
@@ -105,7 +88,7 @@ it('combines the ingredients of every planned recipe in the window', function ()
 
 it('stores the list so both phones see the same ticks', function () {
     // MM-3: the checklist is stored, not recomputed. The rows are the list.
-    $plan = aPlanOf(aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]));
+    $plan = aPlannedWindowOf(aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]));
 
     $row = PlanGroceryItem::query()->where('plan_id', $plan->id)->firstWhere('name', 'Ground beef');
 
@@ -139,13 +122,7 @@ it('adds nothing for a freezer night', function () {
     ]);
     $chili = aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->nights[1], $soup);
-    $planner->chooseMeal($plan->nights[2], $soup);
-
-    $list = (new GroceryListBuilder)->listFor($plan->refresh());
+    $list = (new GroceryListBuilder)->listFor(aPlannedWindowOf($chili, $soup, $soup));
 
     expect($list->count())->toBe(1)
         ->and($list->lineFor('Ground beef', 'lb')->amount())->toBe('1 lb')
@@ -153,7 +130,7 @@ it('adds nothing for a freezer night', function () {
 });
 
 it('puts the pantry basics in the short section at the end', function () {
-    $plan = aPlanOf(aRecipeThatNeeds('Chili', [
+    $plan = aPlannedWindowOf(aRecipeThatNeeds('Chili', [
         ['Ground beef', 1, 'lb', 'Meat'],
         ['Cumin', 1, 'tbsp', 'Pantry', true],
     ]));
@@ -168,7 +145,7 @@ it('puts the pantry basics in the short section at the end', function () {
 it('walks the sections in the order the household wrote down', function () {
     HouseholdSettings::set(HouseholdSettings::KEY_STORE_SECTION_ORDER, ['Produce', 'Meat']);
 
-    $plan = aPlanOf(aRecipeThatNeeds('Chili', [
+    $plan = aPlannedWindowOf(aRecipeThatNeeds('Chili', [
         ['Ground beef', 1, 'lb', 'Meat'],
         ['Onion', 2, null, 'Produce'],
         ['Tortillas', 8, 'count', 'Dry goods'],
@@ -182,7 +159,7 @@ it('ignores a kitchen project’s ingredients, which are MM-12’s', function ()
     $project = KitchenProject::factory()->create(['name' => 'Big batch minestrone']);
     $project->ingredients()->create(['name' => 'Carrots', 'quantity' => 500, 'unit' => 'g']);
 
-    $plan = aPlanOf(aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]));
+    $plan = aPlannedWindowOf(aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]));
 
     expect((new GroceryListBuilder)->listFor($plan)->lineFor('Carrots', 'g'))->toBeNull();
 });
@@ -211,7 +188,7 @@ it('leaves no list behind after a dry run', function () {
 
 it('says what the window asks for without storing any of it', function () {
     $chili = aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
-    $plan = aPlanOf($chili);
+    $plan = aPlannedWindowOf($chili);
     $tacos = aRecipeThatNeeds('White Boy Tacos', [['Tortillas', 8, 'count', 'Dry goods']]);
 
     // Swap the dinner behind the planner's back, so the stored list is stale.
@@ -227,7 +204,7 @@ it('prints the stored list as plain text, with the household’s own cook names'
     HouseholdSettings::set(HouseholdSettings::KEY_COOK_NAMES, ['me' => 'Adrian', 'partner' => 'Milly']);
     theWeekIs([Weekday::Monday->value => [CookAssignment::Me, EffortTier::Workhorse30]]);
 
-    $plan = aPlanOf(aRecipeThatNeeds('Chili', [
+    $plan = aPlannedWindowOf(aRecipeThatNeeds('Chili', [
         ['Ground beef', 1, 'lb', 'Meat'],
         ['Cumin', 1, 'tbsp', 'Pantry', true],
     ]));

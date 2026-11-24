@@ -6,8 +6,13 @@ use App\Enums\EffortTier;
 use App\Enums\Weekday;
 use App\Grocery\IngredientNeed;
 use App\Models\CookScheduleNight;
+use App\Models\FreezerItem;
+use App\Models\Plan;
+use App\Models\PlanNight;
+use App\Models\Recipe;
 use App\Planning\CalendarDate;
 use App\Planning\FreezerOption;
+use App\Planning\MealPlanner;
 use App\Planning\NightBrief;
 use App\Planning\NothingFitsReason;
 use App\Planning\Pick;
@@ -212,6 +217,38 @@ function aNeed(
 | cook schedule out of it. This writes a week the way the Settings page would.
 |
 */
+
+/**
+ * The next window planned, with the dinners named put on its nights in order and
+ * nobody cooking on the nights left over.
+ *
+ * Every night is said, deliberately. planWindow() rolls unseeded, so a test that
+ * pins only the nights it is about is a test whose other nights are whatever the
+ * draw felt like — and a second dinner nobody asked for quietly doubles an
+ * amount. A night off adds no ingredients, so the list is exactly the dinners
+ * named here.
+ */
+function aPlannedWindowOf(Recipe|FreezerItem ...$dinners): Plan
+{
+    $planner = new MealPlanner;
+    $plan = $planner->planWindow();
+
+    foreach ($plan->nights as $index => $night) {
+        isset($dinners[$index])
+            ? $planner->chooseMeal($night, $dinners[$index])
+            : $planner->setOverride($night, cook: CookAssignment::Nobody, note: 'Nobody cooking');
+    }
+
+    return $plan->refresh();
+}
+
+/**
+ * One night of a planned window, fresh from the database.
+ */
+function theNight(Plan $plan, int $index): PlanNight
+{
+    return $plan->refresh()->nights[$index];
+}
 
 /**
  * Set the whole weekly cook schedule, with named weekdays changed.

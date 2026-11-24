@@ -66,18 +66,14 @@ it('makes a new list after a re-roll, keeping the ticks that still mean somethin
     $pupusas = aRecipeFor('Pupusas', 'Masa harina', 500, 'g');
     $tacos = aRecipeFor('White Boy Tacos', 'Tortillas', 8, 'count');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili, lock: true);
-    $planner->chooseMeal($plan->nights[1], $pasta);
-    $planner->chooseMeal($plan->nights[2], $pupusas);
+    $plan = aPlannedWindowOf($chili, $pasta, $pupusas);
 
     theLineFor('Ground beef')->check();
     $tickedAt = theLineFor('Ground beef')->checked_at;
 
     // Only the tacos are left to roll onto Tuesday: the other two are on the
     // nights either side of it.
-    $planner->rerollNight($plan->refresh()->nights[1]);
+    (new MealPlanner)->rerollNight(theNight($plan, 1));
 
     expect(theLineFor('Ground beef')->checked)->toBeTrue()
         ->and(theLineFor('Ground beef')->checked_at->eq($tickedAt))->toBeTrue()
@@ -91,13 +87,11 @@ it('takes a line off the list when nothing in the window wants it any more', fun
     $tacos = aRecipeFor('White Boy Tacos', 'Tortillas', 8, 'count');
     $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $tacos);
+    $plan = aPlannedWindowOf($tacos, $pasta, $pasta);
 
     theLineFor('Tortillas')->check();
 
-    $planner->chooseMeal($plan->refresh()->nights[0], $pasta);
+    (new MealPlanner)->chooseMeal(theNight($plan, 0), $pasta);
 
     expect(theLineFor('Tortillas'))->toBeNull()
         ->and(theLineFor('Pasta'))->not->toBeNull();
@@ -107,15 +101,11 @@ it('adds what the re-roll now needs, unticked', function () {
     $chili = aRecipeFor('Chili', 'Ground beef');
     $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->nights[1], $chili);
-    $planner->chooseMeal($plan->nights[2], $chili);
+    $plan = aPlannedWindowOf($chili, $chili, $chili);
 
     theLineFor('Ground beef')->check();
 
-    $planner->chooseMeal($plan->refresh()->nights[2], $pasta);
+    (new MealPlanner)->chooseMeal(theNight($plan, 2), $pasta);
 
     expect(theLineFor('Pasta')->checked)->toBeFalse()
         // Still two nights of chili, so the beef line stands — at less of it.
@@ -129,15 +119,11 @@ it('drops the tick when the plan starts asking for more of something', function 
     $chili = aRecipeFor('Chili', 'Ground beef');
     $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->nights[1], $pasta);
-    $planner->chooseMeal($plan->nights[2], $pasta);
+    $plan = aPlannedWindowOf($chili, $pasta, $pasta);
 
     theLineFor('Ground beef')->check();
 
-    $planner->chooseMeal($plan->refresh()->nights[1], $chili);
+    (new MealPlanner)->chooseMeal(theNight($plan, 1), $chili);
 
     expect(theLineFor('Ground beef')->quantity)->toBe(2.0)
         ->and(theLineFor('Ground beef')->checked)->toBeFalse()
@@ -148,15 +134,11 @@ it('keeps the tick when the plan asks for less', function () {
     $chili = aRecipeFor('Chili', 'Ground beef');
     $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->nights[1], $chili);
-    $planner->chooseMeal($plan->nights[2], $pasta);
+    $plan = aPlannedWindowOf($chili, $chili, $pasta);
 
     theLineFor('Ground beef')->check();
 
-    $planner->chooseMeal($plan->refresh()->nights[1], $pasta);
+    (new MealPlanner)->chooseMeal(theNight($plan, 1), $pasta);
 
     expect(theLineFor('Ground beef')->quantity)->toBe(1.0)
         ->and(theLineFor('Ground beef')->checked)->toBeTrue();
@@ -167,15 +149,11 @@ it('re-labels a line the meals changed under without disturbing its tick', funct
     $tacos = aRecipeFor('White Boy Tacos', 'Ground beef');
     $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->nights[1], $pasta);
-    $planner->chooseMeal($plan->nights[2], $pasta);
+    $plan = aPlannedWindowOf($chili, $pasta, $pasta);
 
     theLineFor('Ground beef')->check();
 
-    $planner->chooseMeal($plan->refresh()->nights[0], $tacos);
+    (new MealPlanner)->chooseMeal(theNight($plan, 0), $tacos);
 
     expect(theLineFor('Ground beef')->meals)->toBe(['White Boy Tacos'])
         ->and(theLineFor('Ground beef')->checked)->toBeTrue();
@@ -183,8 +161,7 @@ it('re-labels a line the meals changed under without disturbing its tick', funct
 
 it('stamps the plan only when the list really moved', function () {
     $chili = aRecipeFor('Chili', 'Ground beef');
-    $plan = (new MealPlanner)->planWindow();
-    (new MealPlanner)->chooseMeal($plan->nights[0], $chili);
+    $plan = aPlannedWindowOf($chili);
 
     $stamped = $plan->refresh()->grocery_list_changed_at;
 
@@ -202,11 +179,7 @@ it('says what moved, so the household can be told', function () {
     $chili = aRecipeFor('Chili', 'Ground beef');
     $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->nights[1], $chili);
-    $planner->chooseMeal($plan->nights[2], $chili);
+    $plan = aPlannedWindowOf($chili, $chili, $chili);
     theLineFor('Ground beef')->check();
 
     // Two nights of chili become pasta, without going through the planner, so
@@ -232,11 +205,7 @@ it('keeps one line when a line has somehow been stored twice', function () {
     // for one line. The ticked one survives — that tick is somebody's work at the
     // fridge — and the tidy-up is not treated as the list changing.
     $chili = aRecipeFor('Chili', 'Ground beef');
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->refresh()->nights[1], $chili);
-    $planner->chooseMeal($plan->refresh()->nights[2], $chili);
+    $plan = aPlannedWindowOf($chili, $chili, $chili);
 
     $stamped = $plan->refresh()->grocery_list_changed_at;
 
@@ -258,8 +227,7 @@ it('keeps one line when a line has somehow been stored twice', function () {
 
 it('leaves a window that has already been eaten exactly as it was shopped', function () {
     $chili = aRecipeFor('Chili', 'Ground beef');
-    $plan = (new MealPlanner)->planWindow();
-    (new MealPlanner)->chooseMeal($plan->nights[0], $chili);
+    $plan = aPlannedWindowOf($chili);
     theLineFor('Ground beef')->check();
 
     // Three weeks on: every night of that window has been cooked and eaten.
@@ -277,9 +245,7 @@ it('leaves MM-8 what it needs to warn that the plan changed after the shop', fun
     $chili = aRecipeFor('Chili', 'Ground beef');
     $pasta = aRecipeFor('Quick Pasta', 'Pasta', 500, 'g');
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
+    $plan = aPlannedWindowOf($chili);
 
     // The shop is Sunday at 10:00 am, and the list was made at 8:00.
     expect($plan->refresh()->shoppingMoment()->format('Y-m-d H:i'))->toBe('2026-01-11 10:00')
@@ -287,7 +253,7 @@ it('leaves MM-8 what it needs to warn that the plan changed after the shop', fun
 
     // Back from the shop, the household swaps Monday's dinner.
     Carbon::setTestNow(Carbon::parse('2026-01-11 14:00:00', 'America/Toronto'));
-    $planner->chooseMeal($plan->refresh()->nights[0], $pasta);
+    (new MealPlanner)->chooseMeal(theNight($plan, 0), $pasta);
 
     expect($plan->refresh()->groceryListChangedAfterShopping())->toBeTrue();
 });
@@ -296,8 +262,7 @@ it('says nothing about the shop when the household no longer shops that day', fu
     // The shopping days are a setting they can change; a plan keeps the date it
     // was made for. "We can't tell" must not read as "it changed".
     $chili = aRecipeFor('Chili', 'Ground beef');
-    $plan = (new MealPlanner)->planWindow();
-    (new MealPlanner)->chooseMeal($plan->nights[0], $chili);
+    $plan = aPlannedWindowOf($chili);
 
     HouseholdSettings::set(HouseholdSettings::KEY_SHOPPING_TIMES, [
         ['weekday' => 'tuesday', 'time' => '17:00'],
@@ -309,15 +274,11 @@ it('says nothing about the shop when the household no longer shops that day', fu
 
 it('makes the list again when a night becomes a night off', function () {
     $chili = aRecipeFor('Chili', 'Ground beef');
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->nights[1], $chili);
-    $planner->chooseMeal($plan->nights[2], $chili);
+    $plan = aPlannedWindowOf($chili, $chili, $chili);
 
     expect(theLineFor('Ground beef')->quantity)->toBe(3.0);
 
-    $planner->setOverride($plan->refresh()->nights[0], cook: CookAssignment::Nobody, note: 'Eating out');
+    (new MealPlanner)->setOverride(theNight($plan, 0), cook: CookAssignment::Nobody, note: 'Eating out');
 
     expect(theLineFor('Ground beef')->quantity)->toBe(2.0);
 });

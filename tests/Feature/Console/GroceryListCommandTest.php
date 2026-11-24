@@ -62,12 +62,7 @@ function aDinnerNeeding(string $name, array $ingredients): Recipe
 
 it('prints the list for the window the next shop is for', function () {
     $chili = aDinnerNeeding('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-
-    foreach ($plan->nights as $night) {
-        $planner->chooseMeal($night, $chili);
-    }
+    aPlannedWindowOf($chili, $chili, $chili);
 
     [$status, $output] = groceriesWith();
 
@@ -81,8 +76,7 @@ it('prints the list for the window the next shop is for', function () {
 
 it('shows a line somebody has already crossed off', function () {
     $chili = aDinnerNeeding('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
-    $planner = new MealPlanner;
-    $planner->chooseMeal($planner->planWindow()->nights[0], $chili);
+    aPlannedWindowOf($chili);
 
     PlanGroceryItem::query()->firstWhere('name', 'Ground beef')->check();
 
@@ -103,8 +97,7 @@ it('keeps the kid backup foods and the pantry basics apart', function () {
         'pantry_basic' => true,
     ]);
 
-    $planner = new MealPlanner;
-    $planner->chooseMeal($planner->planWindow()->nights[0], $chili);
+    aPlannedWindowOf($chili);
 
     [, $output] = groceriesWith();
 
@@ -119,8 +112,7 @@ it('prints the plain text a chat message carries, and nothing else', function ()
     theWeekIs([Weekday::Monday->value => [CookAssignment::Me, EffortTier::Workhorse30]]);
     $chili = aDinnerNeeding('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
 
-    $planner = new MealPlanner;
-    $planner->chooseMeal($planner->planWindow()->nights[0], $chili);
+    aPlannedWindowOf($chili);
 
     [$status, $output] = groceriesWith('--text');
 
@@ -136,15 +128,11 @@ it('makes the list again when asked, and says what moved', function () {
     $tacos = aDinnerNeeding('White Boy Tacos', [['Tortillas', 8, 'count', 'Dry goods']]);
     $pasta = aDinnerNeeding('Quick Pasta', [['Pasta', 500, 'g', 'Dry goods']]);
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
-    $planner->chooseMeal($plan->refresh()->nights[1], $pasta);
-    $planner->chooseMeal($plan->refresh()->nights[2], $pasta);
+    $plan = aPlannedWindowOf($chili, $pasta, $pasta);
 
     // Swapped behind the planner's back, which is the shape of a list that has
     // fallen out of step.
-    $plan->refresh()->nights[0]->forceFill(['recipe_id' => $tacos->id])->save();
+    theNight($plan, 0)->forceFill(['recipe_id' => $tacos->id])->save();
 
     [, $output] = groceriesWith('--rebuild');
 
@@ -157,13 +145,11 @@ it('warns when the plan changed after the household had shopped', function () {
     $chili = aDinnerNeeding('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
     $tacos = aDinnerNeeding('White Boy Tacos', [['Tortillas', 8, 'count', 'Dry goods']]);
 
-    $planner = new MealPlanner;
-    $plan = $planner->planWindow();
-    $planner->chooseMeal($plan->nights[0], $chili);
+    $plan = aPlannedWindowOf($chili);
 
     // The Sunday shop is at 10:00 am; this is the afternoon.
     Carbon::setTestNow(Carbon::parse('2026-01-11 14:00:00', 'America/Toronto'));
-    $planner->chooseMeal($plan->refresh()->nights[0], $tacos);
+    (new MealPlanner)->chooseMeal(theNight($plan, 0), $tacos);
 
     [, $output] = groceriesWith();
 
@@ -172,8 +158,7 @@ it('warns when the plan changed after the household had shopped', function () {
 
 it('leaves a window that has been eaten as it was shopped', function () {
     $chili = aDinnerNeeding('Chili', [['Ground beef', 1, 'lb', 'Meat']]);
-    $planner = new MealPlanner;
-    $planner->chooseMeal($planner->planWindow()->nights[0], $chili);
+    aPlannedWindowOf($chili);
 
     Carbon::setTestNow(Carbon::parse('2026-02-01 08:00:00', 'America/Toronto'));
 

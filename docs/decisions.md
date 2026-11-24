@@ -379,13 +379,26 @@ at the till (AGENTS.md). `GroceryListBuilder` is the one door that touches the
 database.
 
 - **`GroceryListBuilder` is the API the rest of the app calls.** MM-8, MM-9,
-  MM-11, MM-12 and MM-14 should go through it: `listFor()` for the stored list,
-  `textFor()` for the same list as plain text, `rebuild()` to make it again after
-  the plan changed, `previewFor()` for what the window asks for without storing
-  anything. A `GroceryList` is what a page or a message renders — store sections
-  in order, each holding `GroceryLine`s, with the pantry basics as a separate
-  section at the end. `GroceryLine::toArray()` is the structured form;
+  MM-11, MM-12 and MM-14 should go through it: **`currentFor()` to show the list
+  to somebody**, `textFor()` for the same list as plain text, `listFor()` for the
+  stored list exactly as stored, `isStale()` to ask whether it has fallen behind,
+  `rebuild()` to make it again, `previewFor()` for what the window asks for
+  without storing anything. A `GroceryList` is what a page or a message renders —
+  store sections in order, each holding `GroceryLine`s, with the pantry basics as
+  a separate section at the end. `GroceryLine::toArray()` is the structured form;
   `GroceryListText::post()` the plain-text one.
+
+- **A list can fall behind without the plan changing.** The planner makes it again
+  whenever a dinner changes, but editing a recipe's ingredients or the kid
+  off-ramp inventory touches no plan at all — and MM-15 is adding screens for
+  exactly that. So the read a page does is `currentFor()`, which makes the list
+  again when `isStale()` says the window asks for something else, keeping every
+  tick that still means something and stamping the plan so the
+  after-the-shop warning still fires. `isStale()` compares what there is to buy —
+  not the ticks — and writes nothing, for a caller that would rather warn than
+  rewrite. `listFor()` is still there for "the list exactly as it is stored", and
+  a window whose last night has gone by is never stale, because nothing can change
+  it any more.
 
 - **Two needs merge when the name and the unit match, and never otherwise.** The
   name is compared with its case and spacing ignored, so "Ground beef", "ground

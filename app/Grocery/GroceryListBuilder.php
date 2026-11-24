@@ -24,9 +24,11 @@ use Illuminate\Support\Facades\DB;
  *
  * What the other tickets call:
  *
- *   listFor()     the stored list, ticks and all — MM-8's page, MM-14's dashboard
+ *   currentFor()  the list to show somebody — MM-8's page, MM-14's dashboard
  *   textFor()     the same list as plain text — MM-9's post
- *   rebuild()     make the list again after the plan changed, and say what moved
+ *   listFor()     the stored list exactly as stored, stale or not
+ *   isStale()     does the window ask for something the stored list has not got?
+ *   rebuild()     make the list again, and say what moved
  *   previewFor()  what the window asks for, without storing any of it
  *
  * **The list is stored, not recomputed** (MM-3): both phones have to see the same
@@ -51,11 +53,52 @@ final class GroceryListBuilder
     // -----------------------------------------------------------------
 
     /**
-     * The stored checklist for a plan: grouped by store section, pantry basics
-     * last, with each line's row id and tick.
+     * The list to put in front of somebody: the stored checklist, made again
+     * first if it has fallen behind what the window asks for.
      *
-     * This is the list the household shops with. It is not derived from the plan
-     * on the way out — it is what rebuild() last wrote.
+     * **This is what a page or a post should call.** The planner makes the list
+     * again whenever a dinner changes (MealPlanner), but editing a recipe's
+     * ingredients or the kid off-ramp inventory touches no plan at all — and MM-15
+     * is adding screens for exactly that. A read that corrected nothing would show
+     * a list quietly older than the edit, with nothing to warn about either,
+     * because nothing stamped the plan.
+     *
+     * It writes, then, but only when the list really is behind, and the rebuild
+     * keeps every tick that still means something.
+     */
+    public function currentFor(Plan $plan): GroceryList
+    {
+        return $this->isStale($plan)
+            ? $this->rebuild($plan)->list
+            : $this->listFor($plan);
+    }
+
+    /**
+     * Does the window ask for something other than what is stored?
+     *
+     * Ticks are not part of the question — only what there is to buy, in what
+     * amount, in which section. Writes nothing, for a caller that would rather
+     * show a warning than rewrite the list (MM-8).
+     *
+     * False for a window whose last night has gone by: nothing can change it any
+     * more, so "behind" is not a thing it can be.
+     */
+    public function isStale(Plan $plan): bool
+    {
+        if ($plan->hasPassed()) {
+            return false;
+        }
+
+        return $this->rowsOf($this->previewFor($plan)) !== $this->rowsOf($this->listFor($plan));
+    }
+
+    /**
+     * The stored checklist for a plan, exactly as stored: grouped by store
+     * section, pantry basics last, with each line's row id and tick.
+     *
+     * The list as shopped, stale or not — it is what rebuild() last wrote and is
+     * never derived from the plan on the way out. Use currentFor() to show it to
+     * somebody.
      */
     public function listFor(Plan $plan): GroceryList
     {
@@ -74,7 +117,7 @@ final class GroceryListBuilder
     public function textFor(Plan $plan): string
     {
         return GroceryListText::post(
-            $this->listFor($plan),
+            $this->currentFor($plan),
             $plan->window(),
             $this->picksFor($plan),
             HouseholdSettings::cookLabel(...),
@@ -282,6 +325,25 @@ final class GroceryListBuilder
             ->get()
             ->map(fn (KidBackupFood $food) => IngredientNeed::fromKidBackupFood($food))
             ->all();
+    }
+
+    /**
+     * A list as the rows it would be stored as, keyed and ordered by merge key,
+     * so two lists can be compared for "is there anything different to buy".
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function rowsOf(GroceryList $list): array
+    {
+        $rows = [];
+
+        foreach ($list->lines() as $line) {
+            $rows[$line->mergeKey()] = $line->toRow();
+        }
+
+        ksort($rows);
+
+        return $rows;
     }
 
     /**

@@ -56,9 +56,11 @@ class GroceryListCommand extends Command
         }
 
         // A list nobody has ever made is not a list somebody is holding, so
-        // making it now cannot overwrite anything.
+        // making it now cannot overwrite anything — and one that has fallen behind
+        // an edited recipe or off-ramp is worth correcting before it is read at
+        // the fridge.
         $firstMake = ! $plan->hasGroceryList();
-        $update = $this->option('rebuild') || $firstMake
+        $update = $this->option('rebuild') || $firstMake || $groceries->isStale($plan)
             ? $groceries->rebuild($plan)
             : null;
 

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * One line of a plan's grocery checklist, and whether it has been ticked.
  *
  * @property string $name
+ * @property array<int, string>|null $meals
  * @property float|null $quantity
  * @property string|null $unit
  * @property string|null $store_section
@@ -29,6 +30,7 @@ class PlanGroceryItem extends Model
     protected $fillable = [
         'plan_id',
         'name',
+        'meals',
         'quantity',
         'unit',
         'store_section',
@@ -40,6 +42,10 @@ class PlanGroceryItem extends Model
     protected function casts(): array
     {
         return [
+            // The meals of the window that want this line, in night order. Stored
+            // with the line rather than read off the plan, so the list can say
+            // why an item is on it without the plan behind it (MM-7).
+            'meals' => 'array',
             'quantity' => 'float',
             'pantry_basic' => 'boolean',
             'checked' => 'boolean',

@@ -649,13 +649,35 @@ convenience rather than the only way in. The screens are:
   household asked for the destructive one, and the safe one is offered rather than
   done behind their back.
 
+  **The re-check and the delete are one transaction, with the row locked** for the
+  length of it. They were two statements with a gap in between, and a plan being made
+  in that gap — the scheduler runs on its own (MM-13) — could claim the recipe after
+  the check had said nothing pointed at it. The lock also puts the ingredient cascade
+  inside the same unit of work, so a failure partway cannot take a recipe's
+  ingredients without the recipe.
+
 - **The warning names what it touches,** in sentences, before anything is written:
   which nights lose their dinner and which locked night keeps it, how many times the
-  recipe has been cooked and that the record survives, how many portions are still
-  counted, and which project will go on restocking a retired stash item.
+  recipe has been cooked and that the record survives, what the stash will really be
+  counting afterwards, and which project will go on restocking a retired stash item.
   `App\Vault\MealUsage` works that out from plain values, so the rules and the
   wording are unit-tested with no database (AGENTS.md); it asks `MealPlanner` for the
   current window rather than deriving one.
+
+  The portion sentence counts **what will be there, not what is there now**: a portion
+  held for a night that is about to be picked again comes back as part of the
+  removal, so the warning adds it in and says which night it is coming from.
+  Promising that "the count is left alone" put a number in the sentence that the card
+  beside it contradicted.
+
+- **The banner afterwards is the outcome, not the warning repeated.**
+  `App\Vault\Removal` is a separate value, built by comparing each night before and
+  after the re-pick, because the forecast is sometimes wrong in a way the household
+  would catch: when nothing else fits, MM-6 keeps the meal on the night, and a
+  sentence written from "these nights will be picked again" claimed the dinner had
+  changed while the plan still read the recipe that had just been removed. A night
+  that kept the meal is now said so in words, with the two things that can be done
+  about it — add something that fits, or pick that night's dinner by hand.
 
 - **The other three removals are plain deletes, and each says what it takes.** A bulk
   ingredient takes its tag off the recipes and nothing else (the recipes keep every
@@ -682,6 +704,27 @@ convenience rather than the only way in. The screens are:
   own, immediately, leaving the rest of what the household has typed alone. Editing
   stays batched behind one save button, which is what makes bumping three freezer
   counts one action.
+
+- **The stash form writes only the counts the household typed.** `portions_left` is
+  the one number two things write: the household types it on `/kitchen`, and the
+  planner spends and hands back portions as nights are planned, re-rolled and removed
+  (MM-6). A form that posted every row's count back undid whatever the planner had
+  done while the page was open — including the re-pick that the page's own removal
+  had just set off, which put a spent portion back while the night was still holding
+  it. So each row remembers the count it was loaded with, the save writes only the
+  ones that differ, and a removal or a bring-back refreshes the rows the household
+  has not typed into. A count they did type wins: they are the ones standing at the
+  freezer.
+
+- **An amount has to be more than zero,** on an ingredient and on a kid backup food.
+  Zero is not "no amount" — it is a line on the grocery list that says to buy none of
+  it. An empty box is how the household says they do not measure something, and that
+  is still allowed.
+
+- **The same ingredient and unit cannot be listed twice on one recipe.** MM-7 merges
+  the list on exactly that pair, so two identical rows became one line of double the
+  amount with nothing on the recipe explaining it. Two different units stay two rows:
+  "2 clove" and "1 tbsp" of garlic are two things to buy.
 
 - **Prep steps are numbered by the order they are shown in,** which is the only order
   the household has expressed. There is no drag handle: a step moves by being

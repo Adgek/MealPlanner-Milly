@@ -238,3 +238,53 @@ it('prints the stored list as plain text, with the household’s own cook names'
         ->and($text)->toContain("Meat\n[ ] Ground beef — 1 lb (Chili)")
         ->and($text)->toContain("Check you have\n[ ] Cumin — 1 tbsp (Chili)");
 });
+
+it('hands a page the stored shape: a row id, a tick and a UTC timestamp', function () {
+    // The boundary MM-8 inherits. The unit test for toArray() can only show the
+    // freshly merged shape, where every id is null and nothing is ticked; this is
+    // the shape a page actually renders and ticks against.
+    $plan = aPlannedWindowOf(aRecipeThatNeeds('Chili', [['Ground beef', 1, 'lb', 'Meat']]));
+    $row = PlanGroceryItem::query()->firstWhere('name', 'Ground beef');
+
+    // 9:15 am in Toronto is 14:15 UTC, and UTC is what the column holds.
+    Carbon::setTestNow(Carbon::parse('2026-01-11 09:15:00', 'America/Toronto'));
+    $row->check();
+
+    $structured = (new GroceryListBuilder)->listFor($plan)->toArray();
+
+    expect($structured['sections'][0]['lines'][0])->toBe([
+        'id' => $row->getKey(),
+        'name' => 'Ground beef',
+        'quantity' => 1.0,
+        'unit' => 'lb',
+        'amount' => '1 lb',
+        'section' => 'Meat',
+        'pantry_basic' => false,
+        'meals' => ['Chili'],
+        'checked' => true,
+        'checked_at' => '2026-01-11T14:15:00+00:00',
+    ])
+        ->and($structured['count'])->toBe(1)
+        ->and($structured['checked'])->toBe(1)
+        ->and($structured['pantry_basics'])->toBeNull();
+});
+
+it('round-trips a fraction through the column without reading as a change', function () {
+    // Three tenths of a teaspoon is 0.30000000000000004 in floating point and
+    // "0.30" in a decimal(8,2) column. If those two did not agree, every rebuild
+    // would stamp the plan and MM-8 would warn the household about a list that
+    // reads exactly as it did.
+    $vanilla = aRecipeThatNeeds('Pancakes', [['Vanilla', 0.1, 'tsp', 'Pantry']]);
+    $plan = aPlannedWindowOf($vanilla, $vanilla, $vanilla);
+
+    $stamped = $plan->refresh()->grocery_list_changed_at;
+
+    expect(PlanGroceryItem::query()->firstWhere('name', 'Vanilla')->quantity)->toBe(0.3);
+
+    Carbon::setTestNow(Carbon::parse('2026-01-11 10:00:00', 'America/Toronto'));
+    $groceries = new GroceryListBuilder;
+
+    expect($groceries->isStale($plan->refresh()))->toBeFalse()
+        ->and($groceries->rebuild($plan->refresh())->changedAnything())->toBeFalse()
+        ->and($plan->refresh()->grocery_list_changed_at->eq($stamped))->toBeTrue();
+});

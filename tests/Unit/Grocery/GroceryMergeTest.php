@@ -201,3 +201,49 @@ it('keeps an empty window’s list empty', function () {
     expect(theMerged([])->isEmpty())->toBeTrue()
         ->and(theMerged([])->sectionNames())->toBe([]);
 });
+
+it('adds an amount somebody typed as zero without losing the line', function () {
+    // Zero is an amount, not a missing one: the line still has to be bought.
+    $list = theMerged([
+        aNeed('Soy sauce', 0, 'ml', 'Pantry', meal: 'Beef Bulgogi'),
+        aNeed('Soy sauce', 0, 'ml', 'Pantry', meal: 'Pupusas'),
+    ]);
+
+    expect($list->count())->toBe(1)
+        ->and($list->lineFor('Soy sauce', 'ml')->amount())->toBe('0 ml');
+});
+
+it('adds a negative amount as written rather than quietly tidying it', function () {
+    // Nonsense in a recipe shows up on the list, where somebody sees it and fixes
+    // the recipe. Clamping it would hide the mistake and change the arithmetic.
+    $list = theMerged([
+        aNeed('Cream', -1, 'cup', 'Dairy', meal: 'Chili'),
+        aNeed('Cream', 2, 'cup', 'Dairy', meal: 'Quick Pasta'),
+    ]);
+
+    expect($list->lineFor('Cream', 'cup')->amount())->toBe('1 cup')
+        ->and(theMerged([aNeed('Cream', -1, 'cup')])->lineFor('Cream', 'cup')->amount())->toBe('-1 cup');
+});
+
+it('writes a large amount plainly, with no thousands separator', function () {
+    $list = theMerged([
+        aNeed('Rice', 500000, 'g', 'Dry goods'),
+        aNeed('Rice', 499999.99, 'g', 'Dry goods'),
+    ]);
+
+    expect($list->lineFor('Rice', 'g')->amount())->toBe('999999.99 g');
+});
+
+it('adds fractions up to what a person wrote, not what binary floats say', function () {
+    // 0.1 + 0.1 + 0.1 is 0.30000000000000004 in floating point. The list says
+    // "0.3", and the stored row round-trips as the same amount, which is what the
+    // "stamped only when a line really moved" promise rests on.
+    $list = theMerged([
+        aNeed('Vanilla', 0.1, 'tsp', 'Pantry'),
+        aNeed('Vanilla', 0.1, 'tsp', 'Pantry'),
+        aNeed('Vanilla', 0.1, 'tsp', 'Pantry'),
+    ]);
+
+    expect($list->lineFor('Vanilla', 'tsp')->amount())->toBe('0.3 tsp')
+        ->and($list->lineFor('Vanilla', 'tsp')->toRow()['quantity'])->toBe(0.3);
+});

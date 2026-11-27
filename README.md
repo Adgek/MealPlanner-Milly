@@ -4,9 +4,11 @@ A kitchen logistics and handoff system for one household: it plans the meals for
 each shopping window, says who is cooking and what the kids will eat instead, and
 posts the grocery list and the reminders to Slack.
 
-Read **[`AppPlan.md`](AppPlan.md)** for the problem it solves and
-**[`docs/decisions.md`](docs/decisions.md)** for the decisions every part of it
-rests on. Conventions for changing the code are in **[`AGENTS.md`](AGENTS.md)**.
+Read **[`AppPlan.md`](AppPlan.md)** for the problem it solves,
+**[`docs/use-cases.md`](docs/use-cases.md)** for what the household can do today and
+what is still planned, and **[`docs/decisions.md`](docs/decisions.md)** for the
+decisions every part of it rests on. Conventions for changing the code are in
+**[`AGENTS.md`](AGENTS.md)**.
 
 > **This app has no login.** It is meant to run on one machine at home and be
 > reachable only on the home network. Don't port-forward it or put it on a public
@@ -14,10 +16,41 @@ rests on. Conventions for changing the code are in **[`AGENTS.md`](AGENTS.md)**.
 
 ## What's here so far
 
-The working skeleton: the app boots, the database connects, the shell renders, and
-the checks pass. The **Plan** and **Settings** pages are deliberately empty
-placeholders — MM-4 fills in Settings, MM-8 fills in Plan. There are no household
-tables yet; MM-3 adds those.
+**Everything the household keeps, they can edit. The planning the app does, it does.
+Nothing has reached a phone or a chat yet.**
+
+Working today:
+
+- **The household's own rules**, on **Settings** (`/settings`): the two cooks' names,
+  who cooks each night and how long they have, the shopping days and times, the prep
+  block, dinner time, the two reminder times, the time zone, the raw-split fridge
+  life and the low-stash warning.
+- **The vault and the inventories**: **Recipes** (`/recipes`) for the recipes, their
+  ingredients, their upstream prep and their bulk packs; **Kitchen** (`/kitchen`) for
+  the recurring projects and the freezer stash; **Kid foods** (`/kid-foods`) for the
+  backup inventory. Each list page is also where something gets retired or removed.
+- **Planning a window**, from a terminal: `php artisan milly:plan` picks each night's
+  dinner for the next shopping window — matching who is cooking and how much time
+  they have, narrowing a solo night, holding a freezer portion — and says why a night
+  came out empty.
+- **The grocery list**, from a terminal: `php artisan milly:groceries` merges the
+  window's ingredients (`1 lb + 1 lb` becomes `2 lb`), adds the kid backup foods,
+  keeps the pantry basics in a short "check you have" section, and warns when the
+  list has moved since the shop.
+
+Not here yet:
+
+- **The Plan page is still a placeholder** (MM-8). The planner can already re-roll a
+  night, lock one, swap a meal in by hand and tick a grocery line off — but nothing a
+  person can press calls any of it, so the plan is read in a terminal for now.
+- **Nothing posts, and nothing is scheduled.** The `scheduler` container runs with no
+  jobs — `artisan schedule:list` says so. The Slack posts (MM-9), the daily and prep
+  reminders (MM-13) and the kitchen dashboard for the tablet (MM-14) are all ahead.
+- **Bulk-pack pairing** (MM-11) and **kitchen projects reaching the plan and the
+  list** (MM-12) are not in the picker yet.
+
+[`docs/use-cases.md`](docs/use-cases.md) is the full map — diagram by diagram, with
+the route or command behind every "built", and the gaps nobody owns at the bottom.
 
 ## What you need
 
@@ -173,15 +206,20 @@ touch the household's data.
 ## Layout
 
 ```
-app/Livewire/            Livewire page components (Plan, Settings)
+app/Livewire/            Livewire page components (Plan, Recipes, Kitchen, Settings, the editors)
+app/Planning/            The meal picker: one class per rule, no database (MM-6)
+app/Grocery/             The grocery list: the merge, the sections, the text (MM-7)
+app/Vault/               What retiring or removing a recipe does to a plan (MM-15)
+app/Settings/            HouseholdSettings: every setting's default in one place
+app/Console/Commands/    milly:plan and milly:groceries
 config/                  Laravel config; livewire.php, database.php and app.php are tweaked
-database/migrations/     Laravel's own tables for now; MM-3 adds the household's
+database/migrations/     Laravel's own tables, then the household's (MM-3 onwards)
 docker/                  Dockerfile support: Apache vhost, php.ini, entrypoint, MySQL init
 resources/views/
   layouts/app.blade.php  The shared shell: head, header, nav, footer
-  components/            Blade components (navigation, page-heading, placeholder-panel)
+  components/            Blade components (navigation, page-heading, form fields, panels)
   livewire/              The page templates
-routes/web.php           / redirects to /plan; /plan and /settings
+routes/web.php           / redirects to /plan; the five nav pages and five editors
 routes/console.php       Where scheduled work gets declared
 tests/Unit/              No framework, no database. Planning logic goes here
 tests/Feature/           Boots the app and hits MySQL

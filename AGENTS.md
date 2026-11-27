@@ -10,6 +10,11 @@ Working agreements for this repository. They apply to everyone — people and ag
 2. **`docs/decisions.md`** — the shared decisions every ticket depends on: the stack,
    the defaults, the starting settings. When a ticket makes a decision that other
    tickets need, add it there.
+3. **`docs/use-cases.md`** — the map: what the household can already do, what is in
+   flight, what is planned and what is only an idea, grouped by what they are trying
+   to get done. Start a ticket by finding its use cases there. If your ticket changes
+   what the household can do, move the tag in the same commit — a map that lags the
+   code is worse than no map, because the next ticket plans against it.
 
 Don't re-litigate a recorded decision in passing. If one turns out to be wrong,
 change `docs/decisions.md` in the same commit and say so.

@@ -27,6 +27,11 @@ the ticket that gives them a surface, and the table says where the logic already
 lives, so nobody rebuilds it. Keeping that distinction is the reason this page was
 checked against the code instead of against the board.
 
+**Built does not mean right.** Four merged paths have open fix tickets against them —
+MM-18, MM-20, MM-21 and MM-24 — and a row that sits on one says so, as
+**fix open: MM-nn**. Don't plan a ticket off a `built` tag without reading the fix
+beside it.
+
 Where a built use case has a demo note in [`docs/demos/`](demos/), it is linked.
 **Nothing here links to one yet:** every ticket in the "built" column merged before
 that convention existed, and back-filling a note from memory is worse than no note.
@@ -38,7 +43,8 @@ Against the working tree of this branch, not the board. The stack was booted
 (`docker compose up`), migrated and seeded with `ExampleDataSeeder` — the five
 sample recipes from `AppPlan.md` — and then:
 
-- `php artisan route:list` — 10 of the app's own routes, plus `/` and `/up`.
+- `php artisan route:list` — the 10 routes in `routes/web.php`, plus `/`, `/up` and
+  the framework's own (`storage/{path}`, Livewire's endpoints): 23 in total.
 - `php artisan list milly` — exactly two commands: `milly:plan` and `milly:groceries`.
 - `php artisan schedule:list` — *"No scheduled tasks have been defined."*
 - Both commands run, with `--seed`, `--dry-run`, `--replan`, `--rebuild` and `--text`.
@@ -252,10 +258,10 @@ flowchart LR
 
 | Use case | State | Where it lives |
 | --- | --- | --- |
-| Plan the next window's dinners | built · MM-6 | `php artisan milly:plan`. Ran it: *"Shopping Sun 29 Nov — 3 nights: Mon 30 Nov to Wed 2 Dec"*, a cook, a time budget and a dinner on each night |
+| Plan the next window's dinners | built · MM-6 | `php artisan milly:plan`. Ran it: *"Shopping Sun 29 Nov — 3 nights: Mon 30 Nov to Wed 2 Dec"*, a cook, a time budget and a dinner on each night. The time column has a known defect — see the solo-night row |
 | Match the night's cook and time, and favour what hasn't been cooked lately | built · MM-6 | `app/Planning/` — `NightPicker`, `WindowPicker`, `MealPool`. The variety half weights by days since last cooked, read from `meal_history`, which `planWindow()` fills in as nights pass (group 5) |
-| Narrow a solo night to her quick meals or the freezer | built · MM-6 | `PlanningRules::partnerSoloEffortCap`, applied in `NightBrief` |
-| See why a night came out empty | built · MM-6 | `milly:plan`'s Note column, from the stored `plan_nights.pick_reason` worded by `Pick::explain()` |
+| Narrow a solo night to her quick meals or the freezer | built · MM-6, **fix open: MM-20** | The cap is `PlanningRules::timeAvailableOn()`, called from `NightPicker`. The narrowing is real; `milly:plan` then **prints the night's scheduled time, not the capped one** — a 60-minute Saturday she is on her own for prints as "60-min+ project" (MM-20) |
+| See why a night came out empty | built · MM-6, **fix open: MM-20** | `milly:plan`'s Note column, from the stored `plan_nights.pick_reason` worded by `Pick::explain()`. Ran it: *"Nothing fits a 30-min workhorse night with Together cooking: 1 need more than 30 min; 4 are already spoken for this window…"*. MM-20: a one-off override note can hide the picker's own explanation |
 | Try a roll without saving, or with a fixed seed | built · MM-6 | `milly:plan --dry-run`, `--seed=42`, `--replan`. Ran all three |
 | Review the window — nights, cooks, time, dinners, off-ramps — on a phone | in flight · MM-8 | **`/plan` is a placeholder.** Opened it: *"Nothing planned yet. ARRIVES IN MM-8"*, beside a kitchen clock — with a planned window already in the database. MM-8 is in Needs Review and not merged |
 | Re-roll a night, lock one, hand-pick a meal | in flight · MM-8 | `MealPlanner::rerollNight()`, `lockNight()`, `unlockNight()`, `chooseMeal()` all exist and are tested. Grepped: outside `MealPlanner` itself, only `App\Vault\Retirement` calls `rerollNight()` — **no page or command reaches any of the others** |
@@ -268,7 +274,9 @@ flowchart LR
 
 ## 4. Shopping and the fridge check
 
-The list is built and merged correctly. Nobody can tick anything off it.
+The list is built and merged. Nobody can tick anything off it — and **MM-24 is open
+against the way it is saved**: the rebuild runs inside the planner's own transaction,
+so a failure computing a shopping line can roll back the dinner change that caused it.
 
 ```mermaid
 flowchart LR
@@ -319,6 +327,7 @@ flowchart LR
 | Be warned the list changed after the shop | built · MM-7 | `Plan::groceryListChangedAfterShopping()`, printed as a warning in the command's footer |
 | Cross an item off at the fridge, both phones seeing one tick | in flight · MM-8 | **No surface.** `plan_grocery_items.checked`/`checked_at` and `PlanGroceryItem::check()` exist and are tested; the command renders `[x]` but cannot set it, and `/plan` is a placeholder. MM-23 made the row unique so one line is one checkbox |
 | One line survives a re-roll with its tick | built · MM-7, MM-23 | `GroceryListBuilder::rebuild()` reconciles line by line; `unique (plan_id, merge_key)` stops two rebuilds storing one line twice |
+| The list is kept in step when a dinner changes | built · MM-7, **fix open: MM-24** | `MealPlanner` rebuilds inside its own transaction, so no caller has to remember — which is also the defect: a list failure can take the dinner change with it |
 | Read "use half, put the rest back raw" on a line | planned · MM-11 | Not written |
 | Buy the ingredients for a project that is due | planned · MM-12 | Verified absent: both seeded projects read "due now", and none of their ingredients — carrots, celery, cannellini beans, stock, small pasta — appear in `milly:groceries`. The `ingredients` table is already polymorphic for it |
 | Walk the store in the household's own aisle order | planned · MM-22 | `GrocerySectionOrder` honours `store_section_order`; the setting starts empty, which means alphabetical, and no page can set it |
@@ -369,10 +378,10 @@ flowchart LR
 | Use case | State | Where it lives |
 | --- | --- | --- |
 | Know tonight's dinner and who is cooking | planned · MM-9, MM-14 | The data is there — `plan_nights` for the window — but nothing shows *one night*. `milly:plan` prints the whole window and re-plans as a side effect of being run |
-| Read tonight's kid off-ramp | planned · MM-13, MM-14 | `recipes.kid_off_ramp_note` and `freezer_items.kid_off_ramp` are editable and stored. Checked: `milly:plan`'s columns are Night, Cook, Time, Dinner, Note — **the off-ramp is on no output anywhere** |
+| Read tonight's kid off-ramp | planned · MM-13, MM-14 | `recipes.kid_off_ramp_note` and `freezer_items.kid_off_ramp` are editable and stored, and the editors show them — `/recipes` even flags a recipe that has none. But **no plan, list or reminder output carries one**: `milly:plan`'s columns are Night, Cook, Time, Dinner, Note, and grep finds no reader in `app/Console/` or `app/Grocery/`. On the night, it is only where somebody went looking for it |
 | Have a solo night come out as a quick meal or a freezer portion | built · MM-6 | `NightPicker` with `partner_solo_effort_cap`; the portion is held on `plan_nights.holds_freezer_portion` and handed back on a re-roll |
 | Be told the night before to thaw it | planned · MM-13 | `freezer_items.thaw_lead_time_hours` is stored and editable on `/kitchen`. Nothing reads it. MM-25 moves its 24-hour default into Settings |
-| Have the dinner recorded, once the night has gone by | built · MM-6 | `MealPlanner::recordPastNightsAsCooked()`, called from `planWindow()` (`MealPlanner.php:135`) before its transaction, so every plan catches history up. Idempotent, and freezer nights are deliberately not recorded. Checked: backdating this window's three nights and re-running `milly:plan` wrote exactly three `meal_history` rows |
+| Have the dinner recorded, once the night has gone by | built · MM-6, **fix open: MM-21** | `MealPlanner::recordPastNightsAsCooked()`, called from `planWindow()` (`MealPlanner.php:135`) before its transaction, so every plan catches history up. Idempotent, and freezer nights are deliberately not recorded. Checked: backdating this window's three nights and re-running `milly:plan` wrote exactly three `meal_history` rows. **It rides on `milly:plan`, not on the scheduler** — so history advances when somebody plans, and not otherwise. MM-21 is open on its unbounded scan and on the write sitting outside the transaction |
 | Confirm it — "we cooked it", "we ate out" | idea | See [the gaps](#the-gaps). A planned night that has gone by **counts as** cooked; nothing confirms it. MM-9 rules chat buttons out of its own scope |
 | "Did the kids eat it?", to improve the off-ramps | idea | Parking lot |
 
@@ -384,6 +393,10 @@ Nobody should have to open the app to find out what is happening. Today everybod
 has to, because **nothing is scheduled and nothing posts**: `artisan schedule:list`
 says *"No scheduled tasks have been defined."*, and the `scheduler` container logs
 *"No scheduled commands are ready to run."* on its loop.
+
+One thing that looks like it should be waiting here is not: the meal-history catch-up
+rides on `milly:plan` (group 5), so it already runs. Everything below is genuinely
+waiting on a scheduled job.
 
 ```mermaid
 flowchart LR
@@ -476,10 +489,10 @@ flowchart LR
 | See what is due | built · MM-15 | `/kitchen`. Opened: both seeded projects read *"due now"* — a project never done is due |
 | Keep the freezer stash counts, thaw time and kid off-ramp | built · MM-15 | `/kitchen` → "Freezer stash". Opened: `Frozen minestrone`, 4 portions, 24 thaw hours. The save writes only counts the household actually typed, so it cannot undo the planner |
 | Take a stash item out of play, or bring it back | built · MM-15 | `/kitchen`. `freezer_items.retired_at`; the portions stay counted |
-| Have a planned chaos or solo night hold a portion, and hand it back on a re-roll | built · MM-6 | `plan_nights.holds_freezer_portion`; `PlanNight::releaseFreezerPortion()` |
-| Record a project as done and have the portions added | planned · MM-12 | Today `last_done_on` is a date the household types on the editor — grepped, nothing else writes it. `produces_portions` is stored and applied by nothing |
+| Have a planned chaos or solo night hold a portion, and hand it back on a re-roll | built · MM-6, **fix open: MM-18** | `plan_nights.holds_freezer_portion`; `PlanNight::releaseFreezerPortion()`. MM-18 is open on how often the picker reaches for the stash — it drains faster than the household would, and then solo nights come out "nothing fits" |
+| Record a project as done and have the portions added | planned · MM-12 | Today `last_done_on` is a date the household types on the editor — grepped, nothing else writes it. `produces_portions` is stored and *shown* on `/kitchen` ("Makes 6 portions of Frozen minestrone", via `Kitchen::producesLabel()`), but nothing ever adds those portions to the stash |
 | Have a due project land on the next prep block and reach the grocery list | planned · MM-12 | Not built — see group 4 |
-| Have the stash spent at a rate that doesn't empty it | planned · MM-18 | The reservation is MM-6's; MM-18 is the fix for how often the picker reaches for it |
+| Have the stash spent at a rate that doesn't empty it | planned · MM-18 | The reservation itself is built (above); MM-18 is the open fix for the rate, and for what "recently cooked" should mean for a stash item |
 
 ---
 

@@ -9,6 +9,10 @@ decided.
 The useful part is at the bottom: [**the gaps**](#the-gaps) — what `AppPlan.md` asks
 for that no ticket covers.
 
+This page is the outside view. For the inside — which classes a request passes
+through, what they read and write, and where the rules and transactions sit — see
+[`how-it-works.md`](how-it-works.md).
+
 ## How to read this
 
 Every use case carries a ticket and a state.

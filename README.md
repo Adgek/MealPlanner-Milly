@@ -6,7 +6,8 @@ posts the grocery list and the reminders to Slack.
 
 Read **[`AppPlan.md`](AppPlan.md)** for the problem it solves,
 **[`docs/use-cases.md`](docs/use-cases.md)** for what the household can do today and
-what is still planned, and **[`docs/decisions.md`](docs/decisions.md)** for the
+what is still planned, **[`docs/how-it-works.md`](docs/how-it-works.md)** for how the
+pieces work inside, and **[`docs/decisions.md`](docs/decisions.md)** for the
 decisions every part of it rests on. Conventions for changing the code are in
 **[`AGENTS.md`](AGENTS.md)**.
 
